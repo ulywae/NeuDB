@@ -1,0 +1,31 @@
+#######################################
+# Syntax Coloring Map For NeuDB
+#######################################
+
+#######################################
+# Datatypes and Classes (KEYWORD1)
+#######################################
+NeuDB	KEYWORD1
+NeuLSMDB_FS	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+begin	KEYWORD2
+init	KEYWORD2
+put	KEYWORD2
+get	KEYWORD2
+putVar	KEYWORD2
+getVar	KEYWORD2
+putString	KEYWORD2
+getString	KEYWORD2
+flush	KEYWORD2
+auditLevels	KEYWORD2
+format	KEYWORD2
+setOverrideWhenFull	KEYWORD2
+getOverrideWhenFull	KEYWORD2
+
+#######################################
+# Instances (KEYWORD2)
+#######################################
+db	KEYWORD2
