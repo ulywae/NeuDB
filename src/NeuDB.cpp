@@ -1,22 +1,24 @@
 /**
  * @file NeuDB.cpp
- * @brief Implementation of the high‑level NeuDB wrapper class.
+ * @brief Implementation Layer for the Top‑Level NeuDB Facade Wrapper.
+ * @version 1.1.0
+ * @date 2026
+ * @author Ulywae / Neu Embedded Ecosystem Framework
  *
- * This file implements a simple, user‑friendly interface that wraps the full
- * functionality of `NeuLSMDB_FS` — an LSM‑Tree database engine built on LittleFS.
- * It handles memory management of the engine instance and forwards all method
- * calls to the underlying implementation. Helper methods for Arduino `String`
- * type are also provided here for convenience.
+ * This file provides the concrete implementation for the ultra-lean NeuDB facade,
+ * passing all transactional execution pathways down to the core NeuLSMDB_FS
+ * storage pipeline. It handles dynamic pointer translation, heap-safety wrappers,
+ * and provides specialized buffer tracking mechanisms for dynamic Arduino String types.
  */
 
 #include "NeuDB.h"
 #include "NeuLSMDB_FS.h"
 
 /**
- * @brief Constructor — Allocates and initializes the underlying LSM‑Tree engine on the heap.
+ * @brief Constructor — Allocates the physical core storage pipeline on the heap.
  *
- * The internal engine is stored as a generic `void*` pointer to hide implementation
- * details from the user.
+ * Employs the Pimpl (Pointer-to-Implementation) idiom to conceal low-level storage
+ * definitions behind an opaque `void*` context mask to guarantee absolute compilation isolation.
  */
 NeuDB::NeuDB()
 {
@@ -25,10 +27,10 @@ NeuDB::NeuDB()
 }
 
 /**
- * @brief Destructor — Safely destroys the underlying engine and frees allocated memory.
+ * @brief Destructor — Triggers full memory reclamation of the underlying core instance.
  *
- * Ensures all data is properly flushed and resources (files, tasks, mutexes)
- * are released before shutdown.
+ * Ensures all volatile memory spaces are durably committed, WAL handles unmounted,
+ * and primitive RTOS handles released before terminating the wrapper context scope.
  */
 NeuDB::~NeuDB()
 {
@@ -37,53 +39,51 @@ NeuDB::~NeuDB()
 }
 
 /**
- * @brief Initializes the database engine, mounts LittleFS, and prepares storage.
+ * @brief Initializes the core storage pipeline, mounts VFS partitions, and loads topological data.
  *
- * Must be called once in `setup()` before using any other functions.
+ * Implements the concrete database bootstrap sequence by forwarding configuration metrics.
  *
- * @return true if initialization succeeded; false on filesystem or memory errors.
+ * @return true if initialization, validation, and crash recovery replay succeed; false on hardware or memory fault.
  */
-bool NeuDB::begin()
+bool NeuDB::init()
 {
-    return static_cast<NeuLSMDB_FS *>(_engine)->begin();
+    return static_cast<NeuLSMDB_FS *>(_engine)->init();
 }
 
 /**
- * @brief Stores raw binary data under a specified key.
+ * @brief Direct write pathway forwarding mechanism.
  *
- * Delegates directly to the engine’s `put()` method. Data is written first to
- * write‑ahead log and memtable, then persisted to LittleFS.
+ * Maps execution pathways directly to the underlying core `put()` pipeline. Records are
+ * sequentially committed via append-only WAL logs before mutating volatile memory tree spaces.
  *
- * @param key 8‑bit unique identifier (0–255) for the entry.
- * @param data Pointer to the data buffer to store.
- * @param size Size of the data in bytes.
- * @return true if stored successfully; false on invalid parameters or storage full.
+ * @param key 16‑bit distinct destination tracking index.
+ * @param data Constant pointer targeting the incoming transaction data buffer.
+ * @param size Data payload scale measured in bytes.
+ * @return true if write operation successfully commits; false if rejected by range or capacity guards.
  */
-bool NeuDB::put(uint8_t key, const void *data, size_t size)
+bool NeuDB::put(uint16_t key, const void *data, size_t size)
 {
     return static_cast<NeuLSMDB_FS *>(_engine)->put(key, data, size);
 }
 
 /**
- * @brief Retrieves raw binary data associated with a given key.
+ * @brief Direct point-lookup read pathway forwarding mechanism.
  *
- * Delegates directly to the engine’s `get()` method. Searches memtable, cache,
- * and disk files; uses bloom filters internally for speed.
+ * Maps execution pathways directly to the underlying core `get()` pipeline, executing tiered
+ * traversals from memory trees down to binary-searched physical disk storage levels.
  *
- * @param key 8‑bit unique identifier of the entry to read.
- * @param out Pointer to buffer where retrieved data will be stored.
- * @param size Reference: input = buffer capacity, output = actual bytes read.
- * @return true if key exists and data was read; false if not found or error.
+ * @param key 16‑bit distinct source tracking query index.
+ * @param out Destination pointer targeting the output allocation buffer space.
+ * @param size Reference descriptor managing structural buffer thresholds and real payload sizes.
+ * @return true if point-lookup hits a valid data record matching the index coordinate; false otherwise.
  */
-bool NeuDB::get(uint8_t key, void *out, size_t &size)
+bool NeuDB::get(uint16_t key, void *out, size_t &size)
 {
     return static_cast<NeuLSMDB_FS *>(_engine)->get(key, out, size);
 }
 
 /**
- * @brief Forces all pending data to be written permanently to LittleFS and triggers compaction.
- *
- * Useful before power‑off to ensure no data is lost. Delegates to engine’s `flush()`.
+ * @brief Forces immediate volatile serialization, dumping pending memory states down to permanent file sectors.
  */
 void NeuDB::flush()
 {
@@ -91,9 +91,7 @@ void NeuDB::flush()
 }
 
 /**
- * @brief Runs a health check, scans all storage levels, and prints usage statistics.
- *
- * Shows entry count, file structure, and fragmentation status. Delegates to engine’s `auditLevels()`.
+ * @brief Interrogates active structural levels to compile and print topological footprint reports.
  */
 void NeuDB::auditLevels()
 {
@@ -101,9 +99,9 @@ void NeuDB::auditLevels()
 }
 
 /**
- * @brief Erases all stored data, deletes database files from LittleFS, and resets the engine.
+ * @brief Wipes the active storage directory, truncates logging queues, and formats file systems.
  *
- * @return true if format completed successfully; false on file operation failure.
+ * @return true if partition formatting executes successfully; false on VFS locking failures.
  */
 bool NeuDB::format()
 {
@@ -111,10 +109,9 @@ bool NeuDB::format()
 }
 
 /**
- * @brief Configures behavior when the database reaches maximum capacity.
+ * @brief Configures memory tree reactive constraints when total records breach capacity limits.
  *
- * @param enable If true: automatically evict oldest entries to make space for new writes.
- *               If false: reject new writes until space is freed manually.
+ * @param enable True arms proactive cache evictions via tombstone injection; false enforces rejection faults.
  */
 void NeuDB::setOverrideWhenFull(bool enable)
 {
@@ -122,9 +119,9 @@ void NeuDB::setOverrideWhenFull(bool enable)
 }
 
 /**
- * @brief Gets current configuration policy for full storage handling.
+ * @brief Retrieves the active operational constraint strategy for full storage conditions.
  *
- * @return true if auto‑eviction is enabled; false if writes are rejected when full.
+ * @return true if proactive cache eviction matrix is armed; false if hard validation rejections are enforced.
  */
 bool NeuDB::getOverrideWhenFull() const
 {
@@ -132,31 +129,31 @@ bool NeuDB::getOverrideWhenFull() const
 }
 
 /**
- * @brief Stores an Arduino String (dynamic length string) under a key.
+ * @brief Serializes dynamic heap‑allocated Arduino String components down to persistent blocks.
  *
- * Internally stores the string content plus the null terminator, so it can be
- * reconstructed correctly when retrieved.
+ * Extracts internal character arrays and serializes raw sequences including the null-terminator
+ * byte to ensure deterministic re-materialization during downstream lookup extraction.
  *
- * @param key 8‑bit unique identifier.
- * @param str Constant reference to the Arduino String to save.
- * @return true if stored successfully; false otherwise.
+ * @param key 16‑bit distinct destination tracking index.
+ * @param str Constant reference to the source text string object.
+ * @return true on successful string commitment; false on failure bounds.
  */
-bool NeuDB::putString(uint8_t key, const String &str)
+bool NeuDB::putString(uint16_t key, const String &str)
 {
     // Write string length + character data including null terminator
     return this->put(key, str.c_str(), str.length() + 1);
 }
 
 /**
- * @brief Retrieves an Arduino String stored under the given key.
+ * @brief Materializes dynamic heap-allocated text entries into standard Arduino String objects.
  *
- * Uses a fixed‑size stack buffer (128 bytes here — adjust as needed for your use case).
- * If the key is found, constructs and returns a String object from the stored data.
+ * Leverages a strict stack allocation buffer space to secure safe, overflow-proof memory bounds.
+ * Automatically handles object creation if a valid storage record hits the index block.
  *
- * @param key 8‑bit unique identifier.
- * @return String containing the stored text; empty string if key not found or error.
+ * @param key 16‑bit distinct source tracking query index.
+ * @return String object containing the active verified record text; returns an empty instance on data miss.
  */
-String NeuDB::getString(uint8_t key)
+String NeuDB::getString(uint16_t key)
 {
     char buffer[128]; // Adjust this value to set maximum safe string length
     size_t size = sizeof(buffer);
@@ -173,7 +170,7 @@ String NeuDB::getString(uint8_t key)
  * @var db
  * @brief Global pre‑created instance of NeuDB ready for direct use in Arduino sketches.
  *
- * This global object allows users to immediately call methods like `db.begin()`,
- * `db.putVar()`, etc., without manually creating an instance.
+ * Pre-instantiated singleton exposed globally to eliminate runtime allocation overhead,
+ * allowing application sketches to call core CRUD methods instantly out of the box.
  */
 NeuDB db;

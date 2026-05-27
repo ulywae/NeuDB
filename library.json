@@ -1,0 +1,18 @@
+{
+  "name": "NeuDB",
+  "version": "1.1.0",
+  "description": "Powerful, industrial-grade LSM-Tree embedded storage engine optimized for ESP32 and LittleFS partition layout.",
+  "keywords": "database, lsm-tree, storage, flash, esp32, embedded, lru-cache, wal, neunvs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ulywae/NeuDB"
+  },
+  "authors": [
+    {
+      "name": "ulywae",
+      "maintainer": true
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

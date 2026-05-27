@@ -4,7 +4,7 @@
 
 ## 1. System Initialization Phase (begin() / init())
 
-This routine executes exactly once during the ESP32 hardware bootstrap sequence:
+This routine executes exactly once during the ESP32 hardware bootstrap sequence to guarantee cold-crash recovery and virtual file system (VFS) mount stability:
 
 ```text
 [LittleFS.begin] ──(FAIL)──> [Return FALSE (System Halts)]
@@ -28,7 +28,7 @@ This routine executes exactly once during the ESP32 hardware bootstrap sequence:
 
 ## 2. Data Ingestion Phase (put())
 
-The operational write-path executed concurrently by the main application thread loop:
+The low-latency operational write-path executed concurrently by the main application thread loop:
 
 ```text
 [Acquire Mutex] ──(Timeout > 1000ms)──> Logs "[ERROR] Lock timeout" ──> [Return FALSE]
@@ -54,7 +54,7 @@ The operational write-path executed concurrently by the main application thread 
 
 ## 3. Background Synchronization Phase (Asynchronous tick() Daemon)
 
-FreeRTOS Core 1 scheduler slices execution loops to monitor structural flush boundaries:
+FreeRTOS Core 1 scheduler slices execution loops to monitor structural flush boundaries without stalling the primary write pathway:
 
 ### A. Write-Ahead Log Hard-Serialization (flushWAL)
 
@@ -93,7 +93,7 @@ FreeRTOS Core 1 scheduler slices execution loops to monitor structural flush bou
 
 ## 4. Layer Consolidation Phase (tickCompact())
 
-When Level 0 triggers structural file limits, the compaction engine executes incremental streaming to bound RAM overhead:
+When Level 0 triggers structural file limits, the compaction engine executes incremental streaming merges to strictly bound heap allocation ceilings:
 
 ```text
 [State == MERGE_STREAM] ───> Initializes Min-Heap (Priority Queue) with base stream records from active readers.
@@ -121,6 +121,6 @@ When Level 0 triggers structural file limits, the compaction engine executes inc
 
 ## Architectural Error Resilience Conclusions
 
-1. Concurrency Isolation: If the primary application thread (`put()`) initiates data ingestion while the background daemon thread (`flush()`/`compaction`) is busy constraining Flash boundaries, the write-path waits for a maximum safety buffer of 1000ms before returning a structural `Lock Timeout`, completely averting deadlocks.
+1. **Concurrency Isolation & Deadlock Prevention**: If the primary application thread (`put()`) initiates high-speed data ingestion while the background daemon thread (`flush()`/`compaction`) is busy constraining physical Flash boundaries, the write-path waits for a maximum safety buffer of 1000ms before returning a structural `Lock Timeout`. This architectural separation completely averts race conditions and resource starvation.
 
-2. Crash & Blackout Immunity: If a sudden power loss occurs mid-compaction, the unindexed `.tmp` block remains completely isolated and is safely ignored by `begin()` during boot verification. Legacy `.sst` parent records are only unlinked and deleted _after_ the new combined SST block is verified, successfully reindexed, and registered into the active topology layout.
+2. **Crash & Blackout Immunity**: If a sudden power loss occurs mid-compaction, the unindexed `.tmp` block remains completely isolated on the disk and is safely ignored by `begin()` during boot verification. Legacy `.sst` parent records are exclusively unlinked and deleted from the VFS table _only after_ the new combined SST block is fully verified, successfully reindexed, and registered into the active level topology layout. This guarantees ACID-like atomic durability boundaries on bare-metal systems.

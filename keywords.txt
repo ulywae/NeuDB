@@ -24,6 +24,7 @@ auditLevels	KEYWORD2
 format	KEYWORD2
 setOverrideWhenFull	KEYWORD2
 getOverrideWhenFull	KEYWORD2
+getVersion	KEYWORD2
 
 #######################################
 # Instances (KEYWORD2)

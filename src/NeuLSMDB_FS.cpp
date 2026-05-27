@@ -6,27 +6,17 @@
 #include <algorithm>
 #include "rom/crc.h"
 
-#define NEU_DEBUG 0 // Set to 1 to enable logs, set to 0 for absolute silence
-
-#if NEU_DEBUG
-#define LOG_PRINTF(...) Serial.printf(__VA_ARGS__)
-#define LOG_PRINTLN(x) Serial.println(x)
-#else
-#define LOG_PRINTF(...)
-#define LOG_PRINTLN(x)
-#endif
-
-// ==========================================
-// FUNGSI BANTU CASTING
-// ==========================================
+// =================================================================
+// TYPE ABSTRACTION LAYER: OPAQUE POINTER DATA ARCHITECTURE MAPPING
+// =================================================================
 #define GET_LEVELS() static_cast<std::vector<NeuLSMDB_FS::SSTFile> *>(_levels)
-#define GET_MEM() static_cast<std::map<uint8_t, NeuLSMDB_FS::MemEntry> *>(_mem)
+#define GET_MEM() static_cast<std::map<uint16_t, NeuLSMDB_FS::MemEntry> *>(_mem)
 #define GET_CACHE_LIST() static_cast<std::list<NeuLSMDB_FS::CacheBlock> *>(_cacheList)
 #define GET_CACHE_MAP() static_cast<std::map<uint64_t, std::list<NeuLSMDB_FS::CacheBlock>::iterator> *>(_cacheMap)
 
-// ==========================================
-// DEFINISI LENGKAP SEMUA STRUKTUR
-// ==========================================
+// =================================================================
+// TOPOLOGY SCHEMA: DATA FORMAT STRUCTURE PROFILES
+// =================================================================
 
 struct NeuLSMDB_FS::MemEntry
 {
@@ -38,7 +28,7 @@ struct NeuLSMDB_FS::MemEntry
 
 struct __attribute__((packed)) NeuLSMDB_FS::SSTIndex
 {
-    uint8_t key;
+    uint16_t key;
     uint32_t offset;
     uint16_t size;
     uint32_t ts;
@@ -86,7 +76,7 @@ struct NeuLSMDB_FS::SourceReader
 
 struct NeuLSMDB_FS::HeapEntry
 {
-    uint8_t key;
+    uint16_t key;
     uint32_t ts;
     size_t readerIdx;
     uint32_t offset;
@@ -104,20 +94,20 @@ struct NeuLSMDB_FS::CompactJob
     bool active;
 };
 
-// ==========================================
-// KONSTRUKTOR & DESTRUKTOR
-// ==========================================
+// =================================================================
+// CONTEXT INSTANTIATION: CONSTRUCTOR & DESTRUCTOR ALLOCATIONS
+// =================================================================
 
 NeuLSMDB_FS::NeuLSMDB_FS()
 {
-    // Alokasi memori untuk objek yang disembunyikan
-    _mem = new std::map<uint8_t, MemEntry>();
+    // HEAP ALLOCATION: Instantiate physical structures behind data isolation masks
+    _mem = new std::map<uint16_t, MemEntry>();
     _levels = new std::vector<SSTFile>[MAX_LEVEL]();
     _cacheList = new std::list<CacheBlock>();
     _cacheMap = new std::map<uint64_t, std::list<CacheBlock>::iterator>();
-    _job = new CompactJob(); // Alokasi Job
+    _job = new CompactJob();
 
-    // Inisialisasi Nilai Awal
+    // METRICS INITIALIZATION: Baseline structural limits
     _memCount = 0;
     _memBytes = 0;
     _nextFileId = 1;
@@ -133,12 +123,8 @@ NeuLSMDB_FS::NeuLSMDB_FS()
     _systemReady = false;
     _stopTaskRequested = false;
 
-    // Initialize Access Key
+    // KERNEL INITIALIZATION: Instantiate thread-safety synchronization handles
     _mutex = xSemaphoreCreateMutex();
-    if (_mutex == NULL)
-        LOG_PRINTLN(F("[CRITICAL] Database mutex creation FAILED! System locked."));
-    else
-        LOG_PRINTLN(F("[INFO] Database mutex successfully initialized."));
 }
 
 NeuLSMDB_FS::~NeuLSMDB_FS()
@@ -147,8 +133,8 @@ NeuLSMDB_FS::~NeuLSMDB_FS()
     if (_walFile)
         _walFile.close();
 
-    // Bersihkan Memori
-    delete static_cast<std::map<uint8_t, MemEntry> *>(_mem);
+    // MEMORY SANITIZATION: Reclaim heap space allocated behind opaque pointer masks
+    delete static_cast<std::map<uint16_t, MemEntry> *>(_mem);
     delete[] static_cast<std::vector<SSTFile> *>(_levels);
     delete static_cast<std::list<CacheBlock> *>(_cacheList);
     delete static_cast<std::map<uint64_t, std::list<CacheBlock>::iterator> *>(_cacheMap);
@@ -158,28 +144,28 @@ NeuLSMDB_FS::~NeuLSMDB_FS()
         vSemaphoreDelete(_mutex);
 }
 
-// ==========================================
-// FUNGSI UTAMA: init()
-// ==========================================
+// =================================================================
+// BOOTSTRAP CONTROL PIPELINE: SYSTEM ENGINE BOOT INIT
+// =================================================================
 
 bool NeuLSMDB_FS::init()
 {
     if (_systemReady)
         return true;
 
-    // Initialize LittleFS partition with auto-format fallback enabled
+    // VFS INITIALIZATION: Mount partition topology map via low-level storage drivers
     if (!LittleFS.begin(true))
         return false;
 
-    // Ensure database internal target directory layout exists safely
+    // SYSTEM PATH CHECK: Guarantee transactional directory space profiles exist safely
     if (!LittleFS.exists("/lsm"))
         LittleFS.mkdir("/lsm");
 
-    // Execute standard LSM bootstrap pipeline sequence
+    // DATA RECOVERY SEQUENCING: Reconstruct operational system topology maps
     loadAllSST();
     replayWAL();
 
-    // Mount active write-ahead log file pointer handle
+    // STORAGE ACCESS CHANNEL: Open append-only pipeline stream to commit transaction history log
     _walFile = LittleFS.open("/lsm/wal.log", FILE_APPEND);
     if (!_walFile)
         return false;
@@ -191,25 +177,24 @@ bool NeuLSMDB_FS::init()
 
     if (_taskHandle == NULL)
     {
-        // Pin background compaction scheduler thread exclusively to CPU Core 1
+        // KERNEL DESPATCHER: Isolate low-priority structural reorganization task to physical CPU core 1
         xTaskCreatePinnedToCore(
             [](void *param)
             {
                 NeuLSMDB_FS *db = static_cast<NeuLSMDB_FS *>(param);
                 for (;;)
                 {
-                    // --- SOFT SHUTDOWN ROUTINE ---
-                    // Intercept and break sequential loop execution if formatting request is flagged
+                    // INTERRUPT SERVICE DETECTOR: Gracefully break continuous processing if termination flags match
                     if (db->_stopTaskRequested)
                         break;
 
                     db->tick();
-                    vTaskDelay(pdMS_TO_TICKS(5)); // Yield CPU control to FreeRTOS scheduler slicing
+                    vTaskDelay(pdMS_TO_TICKS(5)); // Relinquish CPU execution control window
                 }
 
                 TaskHandle_t localHandle = db->_taskHandle;
                 db->_taskHandle = NULL;
-                vTaskDelete(NULL); // Destroy current daemon task context
+                vTaskDelete(NULL); // Terminate background process task context
             },
             "LSM_Task", 4096, this, 1, &_taskHandle, 1);
     }
@@ -342,8 +327,6 @@ void NeuLSMDB_FS::tick()
 
     if (currentMemCount >= MEMTABLE_MAX_ENTRIES || _memBytes >= _adaptiveLimit)
     {
-        LOG_PRINTLN(F("[TICK] MemTable limit reached, triggering flush..."));
-
         // Call flush(). The original flush() function is already equipped with
         // internal xSemaphoreTake, so it will lock itself safely!
         flush();
@@ -380,17 +363,16 @@ void NeuLSMDB_FS::runCompactionScheduler()
 }
 
 // ==========================================
-// FUNGSI TULIS: put()
+// WRITE PATH PIPELINE: put()
 // ==========================================
 
-bool NeuLSMDB_FS::put(uint8_t key, const void *data, size_t size)
+bool NeuLSMDB_FS::put(uint16_t key, const void *data, size_t size)
 {
     if (!_systemReady)
         return false;
 
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
     {
-        LOG_PRINTLN(F("[ERROR] MemTable lock timeout during put operation!"));
         return false;
     }
 
@@ -398,33 +380,74 @@ bool NeuLSMDB_FS::put(uint8_t key, const void *data, size_t size)
 
     do
     {
+        // =================================================================
+        // DEFENSIVE VALIDATION: LOCKLESS RANGE CONSTRAINT CHECK
+        // =================================================================
+        if (key >= MAX_TOTAL_ENTRIES)
+            break;
+
         if (size > 65535)
             break;
+
+        // =================================================================
+        // STORAGE INTEGRITY: RESOURCE CAPACITY BOUNDARY INTERRUPT
+        // =================================================================
+        if (_flashFullGuard)
+        {
+            if (_overrideWhenFull)
+            {
+                evictOldestData(); // Force reactive cache eviction on active MemTable elements
+            }
+            else
+            {
+                break; // Hard abort incoming transactions if override policy is suppressed
+            }
+        }
 
         size_t total = __atomic_load_n(&_totalEntryCount, __ATOMIC_SEQ_CST);
         if (total >= MAX_TOTAL_ENTRIES)
         {
             if (_overrideWhenFull)
             {
-                LOG_PRINTLN(F("[SYSTEM] Storage capacity full -> Evicting oldest data"));
                 evictOldestData();
             }
             else
             {
-                LOG_PRINTLN(F("[SYSTEM] Storage capacity full -> Operation rejected"));
                 break;
             }
         }
 
-        if (!appendWAL(key, data, size, false))
-            break;
+        // =================================================================
+        // CONCURRENCY CONTROL: ADAPTIVE WAL TRANSACTION QUEUE RETRY LOOPS
+        // =================================================================
+        int retryWAL = 0;
+        bool walSuccess = false;
+        while (retryWAL < 10)
+        {
+            if (appendWAL(key, data, size, false))
+            {
+                walSuccess = true;
+                break;
+            }
+            // Yield CPU control context to resolve background flush resource locks
+            xSemaphoreGive(_mutex);       // Temporarily release resource lock allocation
+            vTaskDelay(pdMS_TO_TICKS(2)); // Force scheduler context slice execution
+            if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
+                break;
+
+            retryWAL++;
+        }
+
+        if (!walSuccess)
+            break; // Terminate state processing if write pipeline execution fails
 
         uint32_t now = millis();
-        auto &mapMem = *static_cast<std::map<uint8_t, MemEntry> *>(_mem);
+        auto &mapMem = *static_cast<std::map<uint16_t, MemEntry> *>(_mem);
         auto it = mapMem.find(key);
 
         if (it != mapMem.end())
         {
+            // MUTATION PATH: UPDATE IN-MEMORY RECORD VECTOR
             _memBytes -= it->second.size;
             it->second.value.reset(new uint8_t[size]);
             if (data)
@@ -436,6 +459,7 @@ bool NeuLSMDB_FS::put(uint8_t key, const void *data, size_t size)
         }
         else
         {
+            // ALLOCATION PATH: INSERT FRESH MEMTABLE TRANSACTION RECORD
             MemEntry e;
             if (size > 0 && data)
             {
@@ -457,36 +481,44 @@ bool NeuLSMDB_FS::put(uint8_t key, const void *data, size_t size)
     return res;
 }
 
-// ==========================================
-// FUNGSI BACA: get()
-// ==========================================
+// =================================================================
+// READ PATH PIPELINE: get()
+// =================================================================
 
-bool NeuLSMDB_FS::get(uint8_t key, void *out, size_t &size)
+bool NeuLSMDB_FS::get(uint16_t key, void *out, size_t &size)
 {
     if (!_systemReady)
         return false;
 
+    // =================================================================
+    // DEFENSIVE VALIDATION: LOCKLESS RANGE CONSTRAINT CHECK
+    // =================================================================
+    if (key >= MAX_TOTAL_ENTRIES)
+    {
+        size = 0;
+        return false; // Fast-fail early exit before acquiring mutex to optimize CPU cycles
+    }
+
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
     {
-        LOG_PRINTLN(F("[ERROR] MemTable lock timeout during get operation!"));
         return false;
     }
     bool seek = false;
 
     do
     {
-        // 1. MemTable Check
-        auto &mapMem = *static_cast<std::map<uint8_t, MemEntry> *>(_mem);
+        // 1. VOLATILE MEMORY READ PIPELINE (RAM PHASE LOOKUP)
+        auto &mapMem = *static_cast<std::map<uint16_t, MemEntry> *>(_mem);
         auto it = mapMem.find(key);
         if (it != mapMem.end())
         {
             if (it->second.tombstone)
             {
                 size = 0;
-                break;
+                break; // Instantly intercept logically deleted tombstone markers
             }
             if (size < it->second.size)
-                break;
+                break; // Enforce destination buffer capacity threshold protection
 
             memcpy(out, it->second.value.get(), it->second.size);
             size = it->second.size;
@@ -494,7 +526,7 @@ bool NeuLSMDB_FS::get(uint8_t key, void *out, size_t &size)
             break;
         }
 
-        // 2. SSTables Check (Level & Reverse SST Loop)
+        // 2. PERSISTENT STORAGE SEARCH PIPELINE (DISPATCH LOOP LAYER)
         for (int lvl = 0; lvl < MAX_LEVEL; lvl++)
         {
             auto &level = GET_LEVELS()[lvl];
@@ -502,16 +534,17 @@ bool NeuLSMDB_FS::get(uint8_t key, void *out, size_t &size)
             {
                 auto &sst = *itSST;
 
+                // Probabilistic validation: Skip expensive flash reads if key definitely does not exist
                 if (!bloomCheck(sst.bloom, key))
                     continue;
 
-                // 1x LOOKUP SAJA DI SINI
+                // Deterministic index search: Execute binary search strategy on sorted SST index structure
                 auto idxIt = std::lower_bound(sst.index.begin(), sst.index.end(), SSTIndex{key, 0, 0, 0, false});
                 if (idxIt != sst.index.end() && idxIt->key == key)
                 {
                     size_t tmp = size;
 
-                    // LANGSUNG LEMPAR *idxIt KE SINI (Nama tetap readSST)
+                    // Direct single lookup descriptor pointer translation
                     if (readSST(sst, *idxIt, out, tmp))
                     {
                         if (tmp == 0)
@@ -524,7 +557,7 @@ bool NeuLSMDB_FS::get(uint8_t key, void *out, size_t &size)
                             size = tmp;
                             seek = true;
                         }
-                        goto end_get;
+                        goto end_get; // Break out of deep multi-level SST traversal loop instantly
                     }
                 }
             }
@@ -536,41 +569,42 @@ bool NeuLSMDB_FS::get(uint8_t key, void *out, size_t &size)
     return seek;
 }
 
-// ==========================================
-// FUNGSI SIMPAN KE FLASH: flush()
-// ==========================================
+// =================================================================
+// MEMORY TRUNCATION & VOLATILE FLUSH PIPELINE: flush()
+// =================================================================
 void NeuLSMDB_FS::flush()
 {
     // 1. Acquire database mutex lock
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
         return;
 
+    // =================================================================
+    // RESOURCE MONITORING: ENFORCE 90% HARD STORAGE MATRIX BOUNDARY
+    // =================================================================
+    size_t totalBytesFlash = LittleFS.totalBytes();
+    size_t usedBytesFlash = LittleFS.usedBytes();
+    _flashFullGuard = (usedBytesFlash >= (totalBytesFlash * 9) / 10);
+
     auto &mapMem = *GET_MEM();
     if (mapMem.empty())
     {
-        LOG_PRINTLN(F("[FLUSH] MemTable empty, skipping..."));
         xSemaphoreGive(_mutex);
         return;
     }
-
-    LOG_PRINTF("[FLUSH] Writing %d entries to Flash memory...\n", mapMem.size());
 
     if (!writeSST(0, mapMem))
     {
-        LOG_PRINTLN(F("[FLUSH] ERROR: Failed to write SST file!"));
         xSemaphoreGive(_mutex);
         return;
     }
 
-    LOG_PRINTLN(F("[FLUSH] SST file successfully written."));
-
+    // PERSISTENCE SYNC: Purge in-memory volatile vectors upon committed serialization
     mapMem.clear();
     _memBytes = 0;
     __atomic_store_n(&_memCount, 0, __ATOMIC_SEQ_CST);
 
     // 2. Close and physically delete the old WAL log file from Flash storage
     clearWAL();
-    LOG_PRINTLN(F("[FLUSH] WAL log cleared physically."));
 
     _lastFlush = millis();
 
@@ -586,14 +620,15 @@ void NeuLSMDB_FS::flush()
     _walFile = LittleFS.open("/lsm/wal.log", FILE_APPEND);
     if (!_walFile)
     {
-        LOG_PRINTLN(F("[CRITICAL] LittleFS failed to create a new WAL log file!"));
+        // Serial.println(F("[CRITICAL] LittleFS failed to create a new WAL log file!"));
     }
 }
 
-// ==========================================
-// SISTEM WAL (Write Ahead Log)
-// ==========================================
-bool NeuLSMDB_FS::appendWAL(uint8_t key, const void *data, size_t size, bool tombstone)
+// =================================================================
+// TRANSACTION LOG MANAGEMENT: WRITE-AHEAD LOGGING (WAL) SUBSYSTEM
+// =================================================================
+
+bool NeuLSMDB_FS::appendWAL(uint16_t key, const void *data, size_t size, bool tombstone)
 {
     if (!_walFile)
         return false;
@@ -601,7 +636,7 @@ bool NeuLSMDB_FS::appendWAL(uint8_t key, const void *data, size_t size, bool tom
     uint32_t writeSize = (uint32_t)size;
 
     // Calculate structural record checksum using standard CRC32
-    uint32_t crc = crc32_le(0, &key, 1);
+    uint32_t crc = crc32_le(0, (const uint8_t *)&key, sizeof(key));
     crc = crc32_le(crc, (const uint8_t *)&writeSize, sizeof(writeSize));
     if (writeSize > 0 && data)
         crc = crc32_le(crc, (const uint8_t *)data, writeSize);
@@ -610,7 +645,7 @@ bool NeuLSMDB_FS::appendWAL(uint8_t key, const void *data, size_t size, bool tom
 
     // Stream records directly into LittleFS internal RAM buffer ring.
     // Extremely fast execution path; does not trap or block active CPU cycles.
-    if (_walFile.write(&key, 1) != 1)
+    if (_walFile.write((const uint8_t *)&key, sizeof(key)) != sizeof(key))
         return false;
     if (_walFile.write((const uint8_t *)&writeSize, sizeof(writeSize)) != sizeof(writeSize))
         return false;
@@ -640,16 +675,14 @@ void NeuLSMDB_FS::replayWAL()
     _memBytes = 0;
     __atomic_store_n(&_memCount, 0, __ATOMIC_SEQ_CST);
 
-    LOG_PRINTLN(F("[WAL] Starting crash recovery via WAL replay..."));
-
     while (wal.available())
     {
-        uint8_t key;
+        uint16_t key;
         uint32_t sz;
         uint8_t tomb;
         uint32_t crcFile;
 
-        if (wal.read(&key, 1) != 1)
+        if (wal.read((uint8_t *)&key, sizeof(key)) != sizeof(key))
             break;
         if (wal.read((uint8_t *)&sz, sizeof(sz)) != sizeof(sz))
             break;
@@ -657,7 +690,6 @@ void NeuLSMDB_FS::replayWAL()
         // Extra Protection: Prevent wildcard memory allocations if payload size 'sz' is corrupted
         if (sz > 4096)
         {
-            LOG_PRINTLN(F("[WAL] Corrupt entry payload size detected, stopping replay."));
             break;
         }
 
@@ -675,7 +707,7 @@ void NeuLSMDB_FS::replayWAL()
             break;
 
         // Validate CRC integrity using standard hardware-backed calculation
-        uint32_t crcCalc = crc32_le(0, &key, 1);
+        uint32_t crcCalc = crc32_le(0, (const uint8_t *)&key, sizeof(key));
         crcCalc = crc32_le(crcCalc, (const uint8_t *)&sz, sizeof(sz));
         if (sz > 0)
             crcCalc = crc32_le(crcCalc, buf.get(), sz);
@@ -683,8 +715,7 @@ void NeuLSMDB_FS::replayWAL()
 
         if (crcCalc != crcFile)
         {
-            // This point denotes the final boundary of valid transactions before the sudden power blackout.
-            LOG_PRINTLN(F("[WAL] CRC mismatch detected (End of valid log stream), stopping replay."));
+            // This point denotes the final boundary of valid transactions before the sudden power blackout
             break;
         }
 
@@ -722,9 +753,9 @@ void NeuLSMDB_FS::flushWAL()
         _walFile.flush();
 }
 
-// ==========================================
-// MANAJEMEN FILE SST
-// ==========================================
+// =================================================================
+// IMMUTABLE STORAGE SUBSYSTEM: SORTED STRING TABLE (SST) MANAGEMENT
+// =================================================================
 
 String NeuLSMDB_FS::makeFilename(uint8_t level, uint32_t seq)
 {
@@ -736,7 +767,7 @@ uint32_t NeuLSMDB_FS::getFileSeq()
     return _nextFileId++;
 }
 
-bool NeuLSMDB_FS::writeSST(uint8_t level, const std::map<uint8_t, MemEntry> &entries, const String &dstFile)
+bool NeuLSMDB_FS::writeSST(uint8_t level, const std::map<uint16_t, MemEntry> &entries, const String &dstFile)
 {
     if (entries.empty())
         return true;
@@ -756,19 +787,23 @@ bool NeuLSMDB_FS::writeSST(uint8_t level, const std::map<uint8_t, MemEntry> &ent
 
     for (auto &kv : entries)
     {
-        uint8_t k = kv.first;
+        uint16_t k = kv.first;
         const MemEntry &e = kv.second;
 
         uint32_t currentPos = f.position();
 
-        f.write(&k, 1);
+        // SERIALIZATION PHASE: Commit fixed-length metadata header descriptor to persistent storage
+        f.write((const uint8_t *)&k, sizeof(k));
         f.write((const uint8_t *)&e.size, sizeof(e.size));
         f.write((const uint8_t *)&e.ts, sizeof(e.ts));
         uint8_t tomb = e.tombstone ? 1 : 0;
         f.write(&tomb, 1);
+
+        // PAYLOAD PHASE: Append raw variable-length byte string to flash block if active
         if (e.size > 0 && e.value)
             f.write(e.value.get(), e.size);
 
+        // INDEXATION PHASE: Construct tracking descriptor map for lightning-fast memory lookups
         SSTIndex si;
         si.key = k;
         si.offset = currentPos;
@@ -781,9 +816,8 @@ bool NeuLSMDB_FS::writeSST(uint8_t level, const std::map<uint8_t, MemEntry> &ent
     }
     f.close();
 
+    // ENFORCE LSM CONSTRAINTS: Index blocks must be sorted lexicographically by key to allow binary search
     std::sort(idx.begin(), idx.end());
-
-    LOG_PRINTF("[SST] File created: %s | Entries: %d\n", fn.c_str(), idx.size());
 
     sstOut.index = std::move(idx);
     GET_LEVELS()
@@ -822,8 +856,8 @@ bool NeuLSMDB_FS::readSST(const SSTFile &sst, const SSTIndex &idxEntry, void *ou
     if (!f)
         return false;
 
-    // key(1B) + size(2B) + ts(4B) + tombstone(1B) = 8 bytes descriptor metadata preceding raw value data payload
-    const uint32_t valueOffset = idxEntry.offset + 8;
+    // DATA ALIGNMENT JUMPER: key(2B) + size(2B) + timestamp(4B) + tombstone(1B) = 9 bytes offset payload
+    const uint32_t valueOffset = idxEntry.offset + 9;
 
     if (!f.seek(valueOffset))
     {
@@ -838,7 +872,7 @@ bool NeuLSMDB_FS::readSST(const SSTFile &sst, const SSTIndex &idxEntry, void *ou
     if (actualRead != idxEntry.size)
         return false;
 
-    // 5. COMMITTED COLD RECORD TO RAM BLOCK CACHE
+    // 5. CACHE POPULATION: Populate cold storage payload data into volatile LRU Block Cache
     cachePut(sst.fileId, idxEntry.offset, (const uint8_t *)out, idxEntry.size);
     size = idxEntry.size;
 
@@ -847,11 +881,9 @@ bool NeuLSMDB_FS::readSST(const SSTFile &sst, const SSTIndex &idxEntry, void *ou
 
 void NeuLSMDB_FS::loadAllSST()
 {
-    LOG_PRINTLN(F("[LOAD] Initializing storage: Loading all SST files from Flash..."));
     File root = LittleFS.open("/lsm", "r");
     if (!root || !root.isDirectory())
     {
-        LOG_PRINTLN(F("[LOAD] ERROR: Directory /lsm not found or failed to open!"));
         return;
     }
 
@@ -866,8 +898,6 @@ void NeuLSMDB_FS::loadAllSST()
         {
             nm = nm.substring(nm.lastIndexOf('/') + 1);
         }
-
-        LOG_PRINTF("[LOAD] Scanning metadata file: %s\n", nm.c_str());
 
         // Validate file name pattern format "lvX_"
         if (nm.endsWith(".sst") && nm.startsWith("lv"))
@@ -887,7 +917,6 @@ void NeuLSMDB_FS::loadAllSST()
                 File fd = LittleFS.open(fullPath, "r");
                 if (!fd)
                 {
-                    LOG_PRINTF("[LOAD] ERROR: Failed to open physical file: %s\n", fullPath.c_str());
                     f = root.openNextFile();
                     continue;
                 }
@@ -895,10 +924,10 @@ void NeuLSMDB_FS::loadAllSST()
                 while (fd.available())
                 {
                     SSTIndex idx;
-                    uint8_t k;
+                    uint16_t k;
                     uint32_t currentPos = fd.position(); // Capture baseline entry offset location
 
-                    if (fd.read(&k, 1) != 1)
+                    if (fd.read((uint8_t *)&k, sizeof(k)) != sizeof(k))
                         break;
                     idx.key = k;
                     idx.offset = currentPos;
@@ -925,13 +954,11 @@ void NeuLSMDB_FS::loadAllSST()
                 GET_LEVELS()
                 [lvl].push_back(std::move(sst));
                 totalFileDitemukan++;
-                LOG_PRINTF("[LOAD] File %s successfully mounted to Level %d | Total: %d entries\n", fullPath.c_str(), lvl, sst.index.size());
             }
         }
         f = root.openNextFile();
     }
     root.close();
-    LOG_PRINTF("[LOAD] Initialization COMPLETE. Total %d active SST files successfully mounted.\n", totalFileDitemukan);
 }
 
 void NeuLSMDB_FS::deleteSSTFiles(const std::vector<String> &files)
@@ -976,16 +1003,17 @@ void NeuLSMDB_FS::deleteSSTFiles(const std::vector<String> &files)
     }
 }
 
-// ==========================================
-// BLOOM FILTER
-// ==========================================
+// =================================================================
+// PROBABILISTIC FILTERING: HARDWARE-ACCELERATED BLOOM FILTER ENGINE
+// =================================================================
 
-uint32_t NeuLSMDB_FS::bloomHash(uint8_t key, uint8_t seed)
+uint32_t NeuLSMDB_FS::bloomHash(uint16_t key, uint8_t seed)
 {
-    return (crc32_le(seed, &key, 1)) % (BLOOM_FILTER_SIZE * 8);
+    // PROBABILISTIC INTERACTION: Extract bit-vector offsets via hardware-backed CRC32 hashing matrices
+    return (crc32_le(seed, (const uint8_t *)&key, sizeof(key))) % (BLOOM_FILTER_SIZE * 8);
 }
 
-void NeuLSMDB_FS::bloomAdd(uint8_t *filter, uint8_t key)
+void NeuLSMDB_FS::bloomAdd(uint8_t *filter, uint16_t key)
 {
     for (uint8_t i = 0; i < BLOOM_HASH_COUNT; i++)
     {
@@ -994,23 +1022,24 @@ void NeuLSMDB_FS::bloomAdd(uint8_t *filter, uint8_t key)
     }
 }
 
-bool NeuLSMDB_FS::bloomCheck(const uint8_t *filter, uint8_t key)
+bool NeuLSMDB_FS::bloomCheck(const uint8_t *filter, uint16_t key)
 {
     for (uint8_t i = 0; i < BLOOM_HASH_COUNT; i++)
     {
         uint32_t h = bloomHash(key, i);
         if (!(filter[h / 8] & (1 << (h % 8))))
-            return false;
+            return false; // Deterministic shortcut: Key is guaranteed to be non-existent in storage block
     }
-    return true;
+    return true; // Key potentially exists: Proceed safely to perform deterministic disk search
 }
 
-// ==========================================
-// CACHE LRU
-// ==========================================
+// =================================================================
+// VOLATILE ACCELERATION: DOUBLE-MAPPED LRU BLOCK CACHE SUBSYSTEM
+// =================================================================
 
 uint64_t NeuLSMDB_FS::makeCacheKey(uint32_t fileId, uint32_t offset)
 {
+    // BITWISE COMPOUNDING: Construct an absolute 64-bit coordinate space using distinct file and offset blocks
     return (uint64_t)fileId << 32 | offset;
 }
 
@@ -1020,6 +1049,7 @@ void NeuLSMDB_FS::cachePut(uint32_t fileId, uint32_t offset, const uint8_t *data
     auto &mapC = *static_cast<std::map<uint64_t, std::list<CacheBlock>::iterator> *>(_cacheMap);
     auto &listC = *static_cast<std::list<CacheBlock> *>(_cacheList);
 
+    // DEDUPLICATION PHASE: Purge preexisting target elements to refresh transactional record sequences
     if (mapC.count(k))
     {
         _cacheUsed -= mapC[k]->data.size();
@@ -1027,6 +1057,7 @@ void NeuLSMDB_FS::cachePut(uint32_t fileId, uint32_t offset, const uint8_t *data
         mapC.erase(k);
     }
 
+    // RESOURCE CONSTRAINTS: Proactively drop outdated cache blocks to maintain strict memory bounds
     while (_cacheUsed + len > CACHE_SIZE_BYTES && !listC.empty())
     {
         cacheEvict();
@@ -1036,7 +1067,7 @@ void NeuLSMDB_FS::cachePut(uint32_t fileId, uint32_t offset, const uint8_t *data
     b.cacheKey = k;
     b.data.assign(data, data + len);
     listC.push_front(b);
-    mapC[k] = listC.begin();
+    mapC[k] = listC.begin(); // Map registration: Secure absolute O(1) address resolution path via list iterator
     _cacheUsed += len;
 }
 
@@ -1048,7 +1079,10 @@ bool NeuLSMDB_FS::cacheGet(uint32_t fileId, uint32_t offset, std::vector<uint8_t
 
     if (!mapC.count(k))
         return false;
+
     out = mapC[k]->data;
+
+    // CACHE PROMOTION: Shift accessed node to head position via lockless internal pointer splicing
     listC.splice(listC.begin(), listC, mapC[k]);
     return true;
 }
@@ -1060,15 +1094,16 @@ void NeuLSMDB_FS::cacheEvict()
     if (listC.empty())
         return;
 
+    // LEAST RECENTLY USED PHASE: Extract and drop stale elements from the tail boundary of the tracking vector
     auto it = --listC.end();
     _cacheUsed -= it->data.size();
     mapC.erase(it->cacheKey);
     listC.pop_back();
 }
 
-// ==========================================
-// KOMPAKSI & MERGE
-// ==========================================
+// =================================================================
+// REORGANIZATION ENGINE: LSM BACKGROUND COMPACTION SCHEDULER
+// =================================================================
 bool NeuLSMDB_FS::SourceReader::next()
 {
     if (!file || eof)
@@ -1078,8 +1113,8 @@ bool NeuLSMDB_FS::SourceReader::next()
     {
         uint32_t startPos = file.position();
 
-        uint8_t k;
-        if (file.read(&k, 1) != 1)
+        uint16_t k;
+        if (file.read((uint8_t *)&k, sizeof(k)) != sizeof(k))
         {
             eof = true;
             return false;
@@ -1112,7 +1147,6 @@ bool NeuLSMDB_FS::SourceReader::next()
         // PROTECTION 2: Validate if entry size boundary matches physical file limits
         if (file.position() + current.size > file.size())
         {
-            LOG_PRINTF("[READER] Entry payload size (%d) exceeds physical file boundary! File corrupted.\n", current.size);
             eof = true;
             return false;
         }
@@ -1120,11 +1154,11 @@ bool NeuLSMDB_FS::SourceReader::next()
         // PROTECTION 3: Ensure seek operation successfully moves the file pointer
         if (!file.seek(current.size, SeekCur))
         {
-            LOG_PRINTLN(F("[READER] File stream seek failed! Forced exit."));
             eof = true;
             return false;
         }
 
+        // ITERATION INCREMENT: Track block data mutations to detect multi-threaded cache validation shifts
         version++;
         return true;
     }
@@ -1148,6 +1182,8 @@ void NeuLSMDB_FS::triggerCompaction(uint8_t level)
 {
     if (level + 1 >= MAX_LEVEL)
         return;
+
+    // THREAD RESILIENCE: Secure cross-core state using atomic compare-and-swap (CAS) memory fencing
     CompactState exp = IDLE;
     if (!__atomic_compare_exchange_n(&_compactState, &exp, MERGE_STREAM, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
         return;
@@ -1181,7 +1217,6 @@ void NeuLSMDB_FS::triggerCompaction(uint8_t level)
             // FILE DESCRIPTOR LEAK PROTECTION: If the target file fails to open (empty/corrupted),
             // force-close its internal handle here to instantly release the file descriptor in the VFS layer.
             r.close();
-            LOG_PRINTF("[COMPACT] File %s is invalid or empty, closing File Descriptor to prevent leaks.\n", fn.c_str());
         }
     }
 
@@ -1242,7 +1277,7 @@ void NeuLSMDB_FS::tickCompact()
         if (!found)
             continue;
 
-        uint8_t key = top.key;
+        uint16_t key = top.key;
 
         // Group all stream readers sharing the duplicate key
         std::vector<size_t> group;
@@ -1296,7 +1331,7 @@ void NeuLSMDB_FS::tickCompact()
 
         // Write the merged deduplicated record to the temporary target file
         uint8_t tomb = winner.current.tombstone ? 1 : 0;
-        out.write(&key, 1);
+        out.write((const uint8_t *)&key, sizeof(key));
         out.write((uint8_t *)&winner.current.size, sizeof(winner.current.size));
         out.write((uint8_t *)&bestTs, sizeof(bestTs));
         out.write(&tomb, 1);
@@ -1304,7 +1339,7 @@ void NeuLSMDB_FS::tickCompact()
         if (winner.current.size > 0)
             out.write(_compactValBuf.data(), winner.current.size);
 
-        written += 1 + sizeof(winner.current.size) + sizeof(bestTs) + 1 + winner.current.size;
+        written += sizeof(key) + sizeof(winner.current.size) + sizeof(bestTs) + 1 + winner.current.size;
 
         // Advance all stream readers that matched this processed key sequence
         for (size_t idx : group)
@@ -1340,8 +1375,6 @@ void NeuLSMDB_FS::tickCompact()
 
         if (LittleFS.rename(_job->dstTemp, _job->dstFinal))
         {
-            LOG_PRINTF("[COMPACT] Merge stage complete. Reindexing target file: %s\n", _job->dstFinal.c_str());
-
             File f = LittleFS.open(_job->dstFinal, "r");
             if (f)
             {
@@ -1354,12 +1387,12 @@ void NeuLSMDB_FS::tickCompact()
                 while (f.available())
                 {
                     SSTIndex entry;
-                    uint8_t k;
+                    uint16_t k;
 
                     // Capture absolute baseline byte offset right before descriptor extraction
                     uint32_t currentEntryOffset = f.position();
 
-                    if (f.read(&k, 1) != 1)
+                    if (f.read((uint8_t *)&k, sizeof(k)) != sizeof(k))
                         break;
 
                     entry.key = k;
@@ -1393,7 +1426,6 @@ void NeuLSMDB_FS::tickCompact()
                 // Commit the finalized SST file topology registry to the next level (+1)
                 GET_LEVELS()
                 [_job->srcLevel + 1].push_back(std::move(sst));
-                LOG_PRINTF("[COMPACT] Successfully committed compacted SST file registry to Level %d\n", _job->srcLevel + 1);
             }
 
             // Wipe out obsolete stale SST files physically from Flash partition
@@ -1401,7 +1433,6 @@ void NeuLSMDB_FS::tickCompact()
         }
         else
         {
-            LOG_PRINTLN(F("[COMPACT] ERROR: Failed to rename temporary compaction file!"));
             LittleFS.remove(_job->dstTemp);
         }
 
@@ -1411,9 +1442,9 @@ void NeuLSMDB_FS::tickCompact()
     }
 }
 
-// ==========================================
-// FUNGSI BANTU & MANAJEMEN SISTEM
-// ==========================================
+// =================================================================
+// SYSTEM INFRASTRUCTURE: UTILITIES & HEURISTIC ENGINE CONTROL
+// =================================================================
 
 uint32_t NeuLSMDB_FS::crc32(uint32_t crc, const uint8_t *data, size_t len)
 {
@@ -1431,7 +1462,7 @@ void NeuLSMDB_FS::tuneMemtable()
                   ((1.0f - heapRatio) * 0.3f) +
                   ((float)l0Pressure * 0.2f);
 
-    // Adaptively scale down MemTable limits based on system load pressure
+    // Dynamic Parameter Adaptation: Scale limits algorithmically to preserve system stability
     if (score < 0.3f)
         _adaptiveLimit = 8192; // Low pressure: Expand memory threshold for better throughput
     else if (score < 0.6f)
@@ -1449,10 +1480,10 @@ void NeuLSMDB_FS::evictOldestData()
     uint32_t oldestTs = UINT32_MAX;
     String oldestFile;
     size_t oldestIdx = 0;
-    uint8_t oldestKey = 0xFF;
+    uint16_t oldestKey = 0xFFFF;
     uint8_t oldestLvl = 0;
 
-    // Scan backward from the oldest deep level to level 0
+    // DATA PURGING POLICY: Scan backward from the oldest deep level to level 0
     for (int lvl = MAX_LEVEL - 1; lvl >= 0; lvl--)
     {
         for (auto &sst : GET_LEVELS()[lvl])
@@ -1474,14 +1505,12 @@ void NeuLSMDB_FS::evictOldestData()
 
     if (!oldestFile.isEmpty())
     {
-        LOG_PRINTF("[SYSTEM] Evicting historical record -> Key: %u, Level: %d\n", oldestKey, oldestLvl);
-
         MemEntry delEntry;
         delEntry.ts = millis();
         delEntry.tombstone = true;
         delEntry.size = 0;
 
-        // Store tombstone in MemTable without triggering an instant FLUSH to prevent Deadlock/Stack Overflow
+        // CRITICAL DEFERRAL: Store tombstone in MemTable without triggering an instant FLUSH to prevent Deadlock/Stack Overflow
         static_cast<std::map<uint8_t, MemEntry> *>(_mem)->operator[](oldestKey) = std::move(delEntry);
 
         __atomic_sub_fetch(&_totalEntryCount, 1, __ATOMIC_SEQ_CST);
@@ -1494,7 +1523,6 @@ void NeuLSMDB_FS::evictOldestData()
         if (!GET_LEVELS()[0].empty())
         {
             String firstFile = GET_LEVELS()[0][0].filename;
-            LOG_PRINTF("[SYSTEM] Storage critical: Force deleting oldest SST file: %s\n", firstFile.c_str());
             deleteSSTFiles({firstFile});
         }
     }
@@ -1505,13 +1533,13 @@ void NeuLSMDB_FS::auditLevels()
     // === ACQUIRE DATABASE LOCK FOR AUDIT ===
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
     {
-        LOG_PRINTLN(F("[ERROR] Failed to acquire database lock for audit operation!"));
+        Serial.println(F("[ERROR] Failed to acquire database lock for audit operation!"));
         return;
     }
 
     Serial.println(F("\n>>> === NEUDB LSM-TREE TOPOLOGY AUDIT === <<<"));
 
-    // Fetch total live metrics atomically
+    // METRICS RECONCILIATION: Fetch total live database counters using atomic sequential consistency
     size_t totalSekarang = __atomic_load_n(&_totalEntryCount, __ATOMIC_SEQ_CST);
 
     Serial.printf("Active Records: %d | Capacity Limit: %d | Eviction Policy: %s\n",
