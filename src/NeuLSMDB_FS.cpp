@@ -372,8 +372,19 @@ bool NeuLSMDB_FS::put(uint16_t key, const void *data, size_t size)
         return false;
 
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
-    {
         return false;
+
+    // ========================================================================
+    // SMART WRITE STALL POLICY: INTERNAL AUTO-BRAKE GATE
+    // ======================================================================
+    // If Core 1 is detected to be busy with heavy compaction, force Core 0
+    // to give up and release the mutex momentarily to give LittleFS time to dispose of the file descriptor!
+    if (__atomic_load_n(&_compactState, __ATOMIC_SEQ_CST) == MERGE_STREAM)
+    {
+        xSemaphoreGive(_mutex);       // Release the key mutex
+        vTaskDelay(pdMS_TO_TICKS(4)); // Force 4 millisecond dynamic brake!
+        if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
+            return false;
     }
 
     bool res = false;
@@ -383,38 +394,18 @@ bool NeuLSMDB_FS::put(uint16_t key, const void *data, size_t size)
         // =================================================================
         // DEFENSIVE VALIDATION: LOCKLESS RANGE CONSTRAINT CHECK
         // =================================================================
-        if (key >= MAX_TOTAL_ENTRIES)
-            break;
-
-        if (size > 65535)
-            break;
+        if (key >= MAX_TOTAL_ENTRIES || size > 65535)
+            break; // Hard abort incoming transactions instantly via defensive range checks
 
         // =================================================================
         // STORAGE INTEGRITY: RESOURCE CAPACITY BOUNDARY INTERRUPT
         // =================================================================
-        if (_flashFullGuard)
+        if (_flashFullGuard || __atomic_load_n(&_totalEntryCount, __ATOMIC_SEQ_CST) >= MAX_TOTAL_ENTRIES)
         {
             if (_overrideWhenFull)
-            {
-                evictOldestData(); // Force reactive cache eviction on active MemTable elements
-            }
+                evictOldestData(); // Force reactive cache eviction on active MemTable element
             else
-            {
                 break; // Hard abort incoming transactions if override policy is suppressed
-            }
-        }
-
-        size_t total = __atomic_load_n(&_totalEntryCount, __ATOMIC_SEQ_CST);
-        if (total >= MAX_TOTAL_ENTRIES)
-        {
-            if (_overrideWhenFull)
-            {
-                evictOldestData();
-            }
-            else
-            {
-                break;
-            }
         }
 
         // =================================================================
@@ -429,9 +420,10 @@ bool NeuLSMDB_FS::put(uint16_t key, const void *data, size_t size)
                 walSuccess = true;
                 break;
             }
+
             // Yield CPU control context to resolve background flush resource locks
             xSemaphoreGive(_mutex);       // Temporarily release resource lock allocation
-            vTaskDelay(pdMS_TO_TICKS(2)); // Force scheduler context slice execution
+            vTaskDelay(pdMS_TO_TICKS(2)); // Force a brief 2ms backoff delay to allow background task to complete flush and release locks
             if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
                 break;
 
@@ -586,13 +578,13 @@ void NeuLSMDB_FS::flush()
     _flashFullGuard = (usedBytesFlash >= (totalBytesFlash * 9) / 10);
 
     auto &mapMem = *GET_MEM();
-    if (mapMem.empty())
-    {
-        xSemaphoreGive(_mutex);
-        return;
-    }
 
-    if (!writeSST(0, mapMem))
+    // =================================================================
+    // MEMTABLE FLUSH INTEGRITY FENCE
+    // =================================================================
+    // If the MemTable is empty OR the writeSST file write process to Level 0 fails,
+    // immediately return the mutex token to the kernel and abort the disk synchronization cycle.
+    if (mapMem.empty() || !writeSST(0, mapMem))
     {
         xSemaphoreGive(_mutex);
         return;
@@ -643,11 +635,13 @@ bool NeuLSMDB_FS::appendWAL(uint16_t key, const void *data, size_t size, bool to
     uint8_t tombByte = tombstone ? 1 : 0;
     crc = crc32_le(crc, &tombByte, 1);
 
-    // Stream records directly into LittleFS internal RAM buffer ring.
-    // Extremely fast execution path; does not trap or block active CPU cycles.
-    if (_walFile.write((const uint8_t *)&key, sizeof(key)) != sizeof(key))
-        return false;
-    if (_walFile.write((const uint8_t *)&writeSize, sizeof(writeSize)) != sizeof(writeSize))
+    // =================================================================
+    // TRANSACTION DESCRIPTOR FIXED-LENGTH HEADER COMMIT
+    // =================================================================
+    // PIPELINE GUARD: Stream the 16-bit key and 32-bit payload size descriptors directly into LittleFS.
+    // Instantly abort the transaction pipeline if any fixed-length layout block write operation fails.
+    if (_walFile.write((const uint8_t *)&key, sizeof(key)) != sizeof(key) ||
+        _walFile.write((const uint8_t *)&writeSize, sizeof(writeSize)) != sizeof(writeSize))
         return false;
 
     if (writeSize > 0 && data)
@@ -656,11 +650,15 @@ bool NeuLSMDB_FS::appendWAL(uint16_t key, const void *data, size_t size, bool to
             return false;
     }
 
-    if (_walFile.write(&tombByte, 1) != 1)
-        return false;
-    if (_walFile.write((const uint8_t *)&crc, sizeof(crc)) != sizeof(crc))
+    // =================================================================
+    // TRANSACTION TRAILING DISK COMMIT
+    // =================================================================
+    // FOOTER GUARD: Commit tombstone state flag and trailing hardware-backed CRC32 checksum to flash.
+    // Instantly abort pipeline transaction and return false if any filesystem hardware block write fails.
+    if (_walFile.write(&tombByte, 1) != 1 || _walFile.write((const uint8_t *)&crc, sizeof(crc)) != sizeof(crc))
         return false;
 
+    _walFile.flush(); // Force RAM ring-buffer layout state down to silicon blocks
     return true;
 }
 
@@ -682,15 +680,15 @@ void NeuLSMDB_FS::replayWAL()
         uint8_t tomb;
         uint32_t crcFile;
 
-        if (wal.read((uint8_t *)&key, sizeof(key)) != sizeof(key))
-            break;
-        if (wal.read((uint8_t *)&sz, sizeof(sz)) != sizeof(sz))
-            break;
-
-        // Extra Protection: Prevent wildcard memory allocations if payload size 'sz' is corrupted
-        if (sz > 4096)
+        // =================================================================
+        // TRANSACTION LIFECYCLE VFS STREAM VALIDATION
+        // =================================================================
+        // RECOVERY GUARD: Break iteration if stream reads fail OR payload size 'sz' overflows safety bounds
+        if (wal.read((uint8_t *)&key, sizeof(key)) != sizeof(key) ||
+            wal.read((uint8_t *)&sz, sizeof(sz)) != sizeof(sz) ||
+            sz > 4096)
         {
-            break;
+            break; // Abruptly terminate recovery log parsing if any validation fence is tripped
         }
 
         std::unique_ptr<uint8_t[]> buf;
@@ -701,10 +699,14 @@ void NeuLSMDB_FS::replayWAL()
                 break;
         }
 
-        if (wal.read(&tomb, 1) != 1)
-            break;
-        if (wal.read((uint8_t *)&crcFile, sizeof(crcFile)) != sizeof(crcFile))
-            break;
+        // =================================================================
+        // TRANSACTION TRAILING PIPELINE VALIDATION
+        // =================================================================
+        // FOOTER GUARD: Abort tracking if tombstone flag or trailing CRC32 extraction fails
+        if (wal.read(&tomb, 1) != 1 || wal.read((uint8_t *)&crcFile, sizeof(crcFile)) != sizeof(crcFile))
+        {
+            break; // Abruptly terminate log parsing on unexpected trailing stream truncation
+        }
 
         // Validate CRC integrity using standard hardware-backed calculation
         uint32_t crcCalc = crc32_le(0, (const uint8_t *)&key, sizeof(key));
@@ -895,9 +897,7 @@ void NeuLSMDB_FS::loadAllSST()
 
         // Extract pure filename without path if f.name() returns a full absolute path
         if (nm.lastIndexOf('/') != -1)
-        {
             nm = nm.substring(nm.lastIndexOf('/') + 1);
-        }
 
         // Validate file name pattern format "lvX_"
         if (nm.endsWith(".sst") && nm.startsWith("lv"))
@@ -963,43 +963,46 @@ void NeuLSMDB_FS::loadAllSST()
 
 void NeuLSMDB_FS::deleteSSTFiles(const std::vector<String> &files)
 {
-    for (auto &fn : files)
+    // CORE SYNCHRONIZATION: Acquire global context mutex to establish a strict memory barrier across SMP cores
+    if (_mutex && xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE)
     {
-        // Scan across all LSM levels to find the target memory index record
-        for (int l = 0; l < MAX_LEVEL; l++)
+        for (auto &fn : files)
         {
-            auto it = std::find_if(GET_LEVELS()[l].begin(), GET_LEVELS()[l].end(), [&](const SSTFile &x)
-                                   { return x.filename == fn; });
-
-            if (it != GET_LEVELS()[l].end())
+            // GRID TRAVERSAL: Scan across all LSM levels to locate the target cataloged memory index record
+            for (int l = 0; l < MAX_LEVEL; l++)
             {
-                // Decouple index descriptors and adjust the global system entries ledger
-                for (auto &e : it->index)
-                {
-                    if (!e.tombstone)
-                    {
-                        // ANTI-UNDERFLOW PROTECTION: Fetch the current live metric atomically.
-                        // Essential for 'size_t' variables since subtracting below zero causes a roll-over
-                        // to 4.29 billion, which would break the eviction scheduler algorithms.
-                        size_t currentTotal = __atomic_load_n(&_totalEntryCount, __ATOMIC_SEQ_CST);
+                auto it = std::find_if(GET_LEVELS()[l].begin(), GET_LEVELS()[l].end(), [&](const SSTFile &x)
+                                       { return x.filename == fn; });
 
-                        // Only decrement if the current live database pool is safely above zero
-                        if (currentTotal > 0)
+                if (it != GET_LEVELS()[l].end())
+                {
+                    // METRICS RECONCILIATION: Parse the index descriptor block to track and balance global counters
+                    for (auto &e : it->index)
+                    {
+                        if (!e.tombstone)
                         {
-                            __atomic_sub_fetch(&_totalEntryCount, 1, __ATOMIC_SEQ_CST);
+                            // ANTI-UNDERFLOW PROTECTION: Fetch the current live database pool ledger atomically
+                            size_t currentTotal = __atomic_load_n(&_totalEntryCount, __ATOMIC_SEQ_CST);
+
+                            // Strict guard policy for unsigned variables: only decrement if safely above zero
+                            if (currentTotal > 0)
+                                __atomic_sub_fetch(&_totalEntryCount, 1, __ATOMIC_SEQ_CST);
                         }
                     }
-                }
 
-                // Evict the SST entry from active RAM topology map
-                GET_LEVELS()
-                [l].erase(it);
-                break;
+                    // TOPOLOGY METADATA EVICTION: Safely erase the unlinked SST file node from active RAM grid maps
+                    GET_LEVELS()
+                    [l].erase(it);
+                    break;
+                }
             }
+
+            // PHYSICAL DATA UNLINK: Purge the obsolete transactional byte stream block from LittleFS flash storage layer
+            LittleFS.remove(fn);
         }
 
-        // Execute physical file unlinking from the LittleFS storage layer
-        LittleFS.remove(fn);
+        // KERNEL SEMAPHORE RELEASE: Yield the lock back to the scheduler to re-enable concurrent multi-core operations
+        xSemaphoreGive(_mutex);
     }
 }
 
@@ -1112,56 +1115,40 @@ bool NeuLSMDB_FS::SourceReader::next()
     if (file.available())
     {
         uint32_t startPos = file.position();
-
         uint16_t k;
-        if (file.read((uint8_t *)&k, sizeof(k)) != sizeof(k))
+        uint8_t tomb;
+
+        // =================================================================
+        // METADATA HEADER STREAM EXTRACTOR & VALIDATION FENCE
+        // =================================================================
+        // Extract Key (2B), Size (2B), TS (4B), and Tombstone (1B) sequentially.
+        // If any of the I/O processes fail midway, lock the EOF gate instantly!
+        if (file.read((uint8_t *)&k, sizeof(k)) != sizeof(k) ||
+            file.read((uint8_t *)&current.size, 2) != 2 ||
+            file.read((uint8_t *)&current.ts, 4) != 4 ||
+            file.read(&tomb, 1) != 1)
         {
             eof = true;
             return false;
         }
+
         current.key = k;
         current.offset = startPos;
-
-        // PROTECTION 1: Ensure size (2 bytes) and timestamp (4 bytes) are read completely
-        if (file.read((uint8_t *)&current.size, 2) != 2)
-        {
-            eof = true;
-            return false;
-        }
-        if (file.read((uint8_t *)&current.ts, 4) != 4)
-        {
-            eof = true;
-            return false;
-        }
-
-        uint8_t tomb;
-        if (file.read(&tomb, 1) != 1)
-        {
-            eof = true;
-            return false;
-        }
         current.tombstone = (tomb == 1);
-
         valueOffset = file.position();
 
-        // PROTECTION 2: Validate if entry size boundary matches physical file limits
-        if (file.position() + current.size > file.size())
+        // BOUNDARY CHECK & JUMPER: Validasi ukuran payload terhadap batas fisik disk eksternal
+        if (file.position() + current.size > file.size() || !file.seek(current.size, SeekCur))
         {
             eof = true;
             return false;
         }
 
-        // PROTECTION 3: Ensure seek operation successfully moves the file pointer
-        if (!file.seek(current.size, SeekCur))
-        {
-            eof = true;
-            return false;
-        }
-
-        // ITERATION INCREMENT: Track block data mutations to detect multi-threaded cache validation shifts
+        // ITERATION INCREMENT: Track version changes to sync multi-core compaction states
         version++;
         return true;
     }
+
     eof = true;
     return false;
 }
@@ -1480,8 +1467,9 @@ void NeuLSMDB_FS::evictOldestData()
     uint32_t oldestTs = UINT32_MAX;
     String oldestFile;
     size_t oldestIdx = 0;
-    uint16_t oldestKey = 0xFFFF;
+    uint16_t oldestKey = 0;
     uint8_t oldestLvl = 0;
+    bool foundOldest = false;
 
     // DATA PURGING POLICY: Scan backward from the oldest deep level to level 0
     for (int lvl = MAX_LEVEL - 1; lvl >= 0; lvl--)
@@ -1498,12 +1486,13 @@ void NeuLSMDB_FS::evictOldestData()
                     oldestIdx = i;
                     oldestKey = e.key;
                     oldestLvl = lvl;
+                    foundOldest = true;
                 }
             }
         }
     }
 
-    if (!oldestFile.isEmpty())
+    if (foundOldest)
     {
         MemEntry delEntry;
         delEntry.ts = millis();
@@ -1511,7 +1500,7 @@ void NeuLSMDB_FS::evictOldestData()
         delEntry.size = 0;
 
         // CRITICAL DEFERRAL: Store tombstone in MemTable without triggering an instant FLUSH to prevent Deadlock/Stack Overflow
-        static_cast<std::map<uint8_t, MemEntry> *>(_mem)->operator[](oldestKey) = std::move(delEntry);
+        (*GET_MEM())[oldestKey] = std::move(delEntry);
 
         __atomic_sub_fetch(&_totalEntryCount, 1, __ATOMIC_SEQ_CST);
 
