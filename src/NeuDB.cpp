@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.cpp
  * @brief Implementation Layer for the Top‑Level NeuDB Facade Wrapper.
- * @version 1.1.0
+ * @version 1.2.1
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -12,7 +12,7 @@
  */
 
 #include "NeuDB.h"
-#include "NeuLSMDB_FS.h"
+#include "NeuLSMDB/NeuLSMDB_FS.h"
 
 /**
  * @brief Constructor — Allocates the physical core storage pipeline on the heap.

@@ -1,7 +1,7 @@
 /**
  * @file NeuLSMDB_FS.h
- * @brief High-Performance, Military-Grade 16-Bit LSM-Tree Embedded Storage Engine
- * @version 1.1.0
+ * @brief High-Performance, 16-Bit LSM-Tree Embedded Storage Engine
+ * @version 1.2.1
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -12,7 +12,8 @@
  * ==================================================================================
  * NeuLSMDB_FS is a lock-free input validated, crash-resilient Log-Structured Merge
  * (LSM) Tree storage engine optimized for memory-constrained MCU topologies (ESP32)
- * running over the LittleFS virtual file system layer.
+ * running over an abstraction layer of Virtual File System (VFS) storage media
+ * (Supports Internal Flash partitions and External MicroSD Hardware).
  *
  * Key Features Implemented & Battle-Tested:
  *  - 16-Bit Key Space: Lexicographically sorted maps indexing up to 65,536 unique keys.
@@ -34,7 +35,7 @@
  *               ▼                                         ▼
  *    ┌─────────────────────┐                   ┌─────────────────────┐
  *    │ Lockless Range Guard│                   │ Lockless Range Guard│
- *    │  (key >= 2048 Check)│                   │  (key >= 2048 Check)│
+ *    │(KEY_SPACE_LIMIT Chk)│                   │(KEY_SPACE_LIMIT Chk)│
  *    └──────────┬──────────┘                   └──────────┬──────────┘
  *               │                                         │
  *               ▼                                         ▼
@@ -47,43 +48,56 @@
  *    │ _flashFullGuard(90%)│                              │
  *    └──────────┬──────────┘                              ▼
  *               │                              ┌─────────────────────┐
- *               ▼                              │ [2] Loop Levels 0-3 │
- *    ┌─────────────────────┐                   └──────────┬──────────┘
- *    │ FreeRTOS WAL Queue  │                              │
- *    │  (2ms Context Yield)│                              ▼
- *    └──────────┬──────────┘                   ┌─────────────────────┐
- *               │                              │  16-Bit Bloom Check │
- *               ▼                              └────┬───────────┬────┘
- *    ┌─────────────────────┐                        │           │
- *    │  Append to wal.log  │                        │ Miss      │ Hit
- *    └──────────┬──────────┘                        ▼           ▼
- *               │                             [Next File]  ┌────────────────────────┐
- *               ▼                                          │ Binary SST Index Search│
- *    ┌─────────────────────┐                               │   (std::lower_bound)   │
- *    │ Commit to MemTable  │                               └────┬───────────────────┘
- *    └─────────────────────┘                                    │
- *               │                                               ▼
- *               ▼                                  ┌─────────────────────┐
- *    [ Background Flush (tick) ]                   │ LRU Block Cache Read│
- *               │                                  └────┬───────────┬────┘
- *               ▼                                       │           │
- *    ┌─────────────────────┐                            │ Miss      │ Hit
- *    │  Serialize to SST   │                            ▼           ▼
- *    │   (Level 0 File)    │                       ┌─────────┐ ┌──────────┐
- *    └──────────┬──────────┘                       │ LittleFS│ │ Fast RAM │
- *               │                                  │ Read +9B│ │  Return  │
- *               ▼                                  └─────────┘ └──────────┘
+ *               │                              │ [2] Loop Levels 0-4 │
+ *               ▼                              └──────────┬──────────┘
+ *    ┌─────────────────────┐                              │
+ *    │ FreeRTOS WAL Queue  │                              ▼
+ *    │  (2ms Context Yield)│                   ┌─────────────────────┐
+ *    └──────────┬──────────┘                   │  16-Bit Bloom Check │
+ *               │                              └────┬───────────┬────┘
+ *               ▼                                   │           │
+ *    ┌─────────────────────┐                        │ Miss      │ Hit
+ *    │  Append to wal.log  │                        ▼           ▼
+ *    └──────────┬──────────┘                       [Next File] ┌────────────────────────┐
+ *               │                                              │ Binary SST Index Search│
+ *               ▼                                              │   (std::lower_bound)   │
+ *    ┌─────────────────────┐                                   └────┬───────────────────┘
+ *    │ Commit to MemTable  │                                        │
+ *    └─────────────────────┘                                        ▼
+ *               │                                      ┌─────────────────────┐
+ *               ▼                                      │ LRU Block Cache Read│
+ *    [ Background Flush (tick) ]                       └────┬───────────┬────┘
+ *               │                                           │           │
+ *               ▼                                           │ Miss      │ Hit
+ *    ┌─────────────────────┐                                ▼           ▼
+ *    │  Serialize to SST   │                           ┌─────────┐ ┌──────────┐
+ *    │   (Level 0 File)    │                           │ Physical│ │ Fast RAM │
+ *    └──────────┬──────────┘                           │ VFS Read│ │  Return  │
+ *               │                                      └─────────┘ └──────────┘
+ *               ▼
  *    ┌─────────────────────┐
  *    │ background Compact  │
- *    │ (Merge Stream L0->L1│
+ *    │(Merge Stream L0->L4)│
  *    └─────────────────────┘
  *
  * ==================================================================================
  */
 
-#pragma once
+#if !defined(NEU_CORE_ECO_SYSTEM)
+/**
+ * @def NEU_SECURITY_GUARD
+ * @brief SYSTEM INTEGRITY & ECOSYSTEM ENCAPSULATION FENCE
+ *
+ * This core compilation submodule is a restricted internal asset of the Neu framework.
+ * Direct independent execution, compilation, or compilation-unit bridging is strictly PROHIBITED.
+ */
+#error "Illegal Access Error! [NeuLSMDB_FS] Isolate violation detected. This subsystem must only be ingested via the unified NeuDB abstraction gate."
+#endif
 
-#include <LittleFS.h>
+#ifndef NEU_LSMDB_FS_H
+#define NEU_LSMDB_FS_H
+
+#include "NeuDB_Config.h"
 #include <cstdint>
 #include <cstddef>
 #include <WString.h>
@@ -95,7 +109,41 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-typedef QueueHandle_t SemaphoreHandle_t;
+#include <FS.h>
+
+#if defined(USE_LITTLEFS)
+#include <LittleFS.h>
+#define STORAGE_INIT() LittleFS.begin(true)
+#define STORAGE_EXISTS(p) LittleFS.exists(p)
+#define STORAGE_MKDIR(p) LittleFS.mkdir(p)
+#define STORAGE_REMOVE(p) LittleFS.remove(p)
+#define STORAGE_RMDIR(p) LittleFS.rmdir(p)
+#define STORAGE_OPEN(p, m) LittleFS.open(p, m)
+#define STORAGE_RENAME(o, n) LittleFS.rename(o, n)
+#define STORAGE_TOTAL() LittleFS.totalBytes()
+#define STORAGE_USED() LittleFS.usedBytes()
+
+#elif defined(USE_SDCARD)
+#include <SD.h>
+#include <SPI.h>
+// Initialize SD using the pin set above
+#define STORAGE_INIT() ({                       \
+    SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS); \
+    SD.begin(SD_CS, SPI, SD_SPEED);             \
+})
+
+#define STORAGE_EXISTS(p) SD.exists(p)
+#define STORAGE_MKDIR(p) SD.mkdir(p)
+#define STORAGE_REMOVE(p) SD.remove(p)
+#define STORAGE_RMDIR(p) SD.rmdir(p)
+#define STORAGE_OPEN(p, m) SD.open(p, m)
+#define STORAGE_RENAME(o, n) SD.rename(o, n)
+#define STORAGE_TOTAL() SD.cardSize()
+#define STORAGE_USED() (SD.cardSize() - (SD.totalBytes() - SD.usedBytes()))
+
+#else
+#error "Please enable one of: #define USE_LITTLEFS OR #define USE_SDCARD"
+#endif
 
 // ==========================================
 // MAIN CLASS DECLARATION
@@ -152,14 +200,14 @@ private:
     // SYSTEM ARCHITECTURE CONSTANTS
     // ==========================================
 
-    static constexpr uint8_t MAX_LEVEL = 4;             ///< Maximum depth of LSM‑Tree levels (3–5 recommended)
-    static constexpr size_t MEMTABLE_MAX_ENTRIES = 512; ///< Max entries before memtable is flushed to disk
-    static constexpr size_t CACHE_SIZE_BYTES = 1024;    ///< Total memory allocated for block cache (bytes)
-    static constexpr uint8_t COMPACT_BUDGET_KB = 16;    ///< Max dynamic memory used during compaction (KB)
-    static constexpr size_t SST_TARGET_SIZE = 4096;     ///< Target size per SSTable file (bytes)
-    static constexpr size_t MAX_TOTAL_ENTRIES = 2048;   ///< Absolute maximum entries stored in whole database
-    static constexpr size_t BLOOM_FILTER_SIZE = 64;     ///< Bloom filter size in bytes (max 128)
-    static constexpr uint8_t BLOOM_HASH_COUNT = 4;      ///< Number of hash functions per bloom filter
+    static constexpr uint8_t MAX_LEVEL = NEU_MAX_LEVEL;                      ///< Maximum depth of LSM‑Tree levels (3–5 recommended)
+    static constexpr size_t MEMTABLE_MAX_ENTRIES = NEU_MEMTABLE_MAX_ENTRIES; ///< Max entries before memtable is flushed to disk
+    static constexpr size_t CACHE_SIZE_BYTES = NEU_CACHE_SIZE_BYTES;         ///< Total memory allocated for block cache (bytes)
+    static constexpr uint8_t COMPACT_BUDGET_KB = NEU_COMPACT_BUDGET_KB;      ///< Max dynamic memory used during compaction (KB)
+    static constexpr size_t SST_TARGET_SIZE = NEU_SST_TARGET_SIZE;           ///< Target size per SSTable file (bytes)
+    static constexpr size_t MAX_TOTAL_ENTRIES = NEU_MAX_TOTAL_ENTRIES;       ///< Absolute maximum entries stored in whole database
+    static constexpr size_t BLOOM_FILTER_SIZE = NEU_BLOOM_FILTER_SIZE;       ///< Bloom filter size in bytes (max 128)
+    static constexpr uint8_t BLOOM_HASH_COUNT = NEU_BLOOM_HASH_COUNT;        ///< Number of hash functions per bloom filter
 
     // ==========================================
     // SYSTEM STATE VARIABLES & HANDLES
@@ -232,3 +280,5 @@ private:
     bool _compactInitialized = false;            ///< Flag: compaction structures allocated
     std::vector<uint8_t> _compactValBuf;         ///< Temporary buffer for values during merge
 };
+
+#endif // NEU_LSMDB_FS_H
