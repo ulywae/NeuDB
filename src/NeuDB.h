@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.h
  * @brief High‑Level Facade Interface Wrapper for the NeuLSMDB_FS Core Storage Engine.
- * @version 1.2.1
+ * @version 1.2.2
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -11,10 +11,6 @@
  * internal vectors, primitive mutices, priority queues, and raw file handles behind an
  * opaque object mask (Pimpl pattern) to guarantee compile‑time isolation and zero header pollution.
  */
-
-#if !defined NEU_CORE_ECO_SYSTEM
-#define NEU_CORE_ECO_SYSTEM
-#endif
 
 #ifndef NEU_DB_H
 #define NEU_DB_H
@@ -185,7 +181,7 @@ public:
      * @brief Fetches the current operational library version tag.
      * @return SemVer compliant constant character array pointer ("MAJOR.MINOR.PATCH").
      */
-    const char *getVersion() const { return "1.2.1"; }
+    const char *getVersion() const { return "1.2.2"; }
 
 private:
     void *_engine; ///< Opaque Pimpl pointer concealing the active NeuLSMDB_FS engine instance profile.

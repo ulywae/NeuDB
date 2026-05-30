@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.cpp
  * @brief Implementation Layer for the Top‑Level NeuDB Facade Wrapper.
- * @version 1.2.1
+ * @version 1.2.2
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -11,6 +11,7 @@
  * and provides specialized buffer tracking mechanisms for dynamic Arduino String types.
  */
 
+#include "NeuLSMDB/DB_Token.h"
 #include "NeuDB.h"
 #include "NeuLSMDB/NeuLSMDB_FS.h"
 

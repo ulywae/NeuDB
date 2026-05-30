@@ -1,7 +1,7 @@
 /**
  * @file NeuDB_Config.h
  * @brief Adaptive Compile-Time Configuration Profiles for the NeuLSMDB_FS Engine.
- * @version 1.2.1
+ * @version 1.2.2
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -13,7 +13,7 @@
  * seamlessly via static preprocessor macro selectors.
  *
  * ==================================================================================
- *  ⚠️ CRITICAL CRASH & WARRANTY VOID WARNING / SYNC INTEGRITY LIABILITY NOTICE ⚠️
+ *  CRITICAL CRASH & WARRANTY VOID WARNING / SYNC INTEGRITY LIABILITY NOTICE
  * ==================================================================================
  * DO NOT, under any circumstances, manually modify the downstream internal core engine
  * parameters or memory thresholds beyond this configuration file boundary.

@@ -1,7 +1,7 @@
 /**
  * @file NeuLSMDB_FS.h
  * @brief High-Performance, 16-Bit LSM-Tree Embedded Storage Engine
- * @version 1.2.1
+ * @version 1.2.2
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -97,7 +97,6 @@
 #ifndef NEU_LSMDB_FS_H
 #define NEU_LSMDB_FS_H
 
-#include "NeuDB_Config.h"
 #include <cstdint>
 #include <cstddef>
 #include <WString.h>
@@ -109,6 +108,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include "NeuDB_Config.h"
 #include <FS.h>
 
 #if defined(USE_LITTLEFS)

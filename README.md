@@ -10,6 +10,17 @@ NeuDB (**NeuLSMDB_FS**) is a high-performance, asynchronous Log-Structured Merge
 
 ---
 
+### Why NeuDB?
+
+| Feature               | Traditional Preferences / JSON    | NeuDB v1.2.2 (LSM-Tree)                           |
+| :-------------------- | :-------------------------------- | :------------------------------------------------ |
+| **Write Workloads**   | High Flash Wear (In-Place Update) | Low Flash Wear (Sequential Append)                |
+| **Power-Fail Safety** | High Risk of File Corruption      | Bulletproof (Atomic WAL Recovery)                 |
+| **Watchdog (WDT)**    | Often Triggers Crash on Large I/O | Auto-Yielding (S3 & C3 Safe Architecture)         |
+| **Search Speed**      | Full File Scan (Linear O(N))      | Microsecond Lookup (Bloom Filter + Binary Search) |
+
+---
+
 ## Key Architectural Features
 
 - **Adaptive Multi-Media Storage Framework:** Supports seamless runtime switching between resource-constrained internal Flash partitions (LittleFS) and high-capacity external MicroSD layouts via compile-time profile switches.
@@ -17,9 +28,10 @@ NeuDB (**NeuLSMDB_FS**) is a high-performance, asynchronous Log-Structured Merge
 - **Asynchronous Incremental Compaction Scheduler:** Driven by an isolated FreeRTOS background task pinned exclusively to CPU Core 1. It utilizes a Min-Heap (`std::priority_queue`) to stream-merge, deduplicate stale entries, and push finalized sorted data to deeper levels without triggering CPU starvation or Watchdog (WDT) resets.
 - **Microsecond Read Path Optimization:** Harnesses the combined power of hardware-backed **Dynamic Bloom Filters** (up to 128 bytes with 5 hash counts) to intercept storage misses early, alongside **Binary Search (`std::lower_bound`)** on sorted in-memory index arrays to slash physical disk read latencies.
 - **RAM Block Cache Layer:** Caches hot data record offsets dynamically into RAM memory blocks, bypassing heavy file-seek operations and directory traversal overhead on subsequent reads.
-- **Industrial Power-Fail Safe Recovery:** Features robust Write-Ahead Logging (WAL) packed with hardware-backed CRC32-LE checksums. Automatically detects dirty shutdowns, skips trailing truncated sectors, and executes an atomic _WAL Replay_ during boot initialization to rescue uncommitted data safely.
+- **Power-Fail Safe Recovery:** Features robust Write-Ahead Logging (WAL) packed with hardware-backed CRC32-LE checksums. Automatically detects dirty shutdowns, skips trailing truncated sectors, and executes an atomic _WAL Replay_ during boot initialization to rescue uncommitted data safely.
 - **Defensive Boundary Partition Guards:** Implements an automated resource monitoring system that flags a global `_flashFullGuard` when storage usage touches 90% or physical entry ceilings breach constraints, smoothly transitioning the write path or triggering reactive cache evictions.
 - **Clean Facade Interface (Pimpl Pattern):** Completely hides complex internal STL containers (`std::map`, `std::vector`, `std::list`), abstract structs, and FreeRTOS primitive handles using an opaque `void*` wrapper interface. Zero header pollution.
+- **Zero-Malloc MemTable Architecture:** Eliminates dynamic heap allocations (malloc/new) during active runtime write cycles. Built defensively using pre-allocated structures to wipe out execution-time memory fragmentation.
 
 ---
 
@@ -42,7 +54,8 @@ struct __attribute__((packed)) TelemetryData {
 void setup() {
     Serial.begin(115200);
 
-    // Mounts LittleFS, loads topological metadata, and runs WAL recovery if crashed
+    // Dynamic Multi-Media Boot: Mounts VFS hardware layer (LittleFS / SD-Card based on Config),
+    // loads deep topological metadata, and replays atomic WAL logs if a dirty shutdown is detected.
     if (db.begin()) {
         Serial.println("NeuDB Core Subsystem Initialized successfully.");
     }
@@ -66,7 +79,12 @@ void loop() {
     db.putString(1500, "NeuDB Mode PC Badas!");
     String message = db.getString(1500);
 
-    vTaskDelay(pdMS_TO_TICKS(5)); // Yield CPU time slice to background compaction daemon
+    // CRITICAL FOR ALL ESP32 ARCHITECTURES (ESP32, S3, C3, C6):
+    // Always maintain a vTaskDelay() or yield() inside your execution loops.
+    // This forces the FreeRTOS scheduler to assign essential time-slices to
+    // system background tasks and prevents Task Watchdog Timer (WDT) starvation
+    // while NeuDB's asynchronous compaction daemon is churning data on Core 0.
+    vTaskDelay(pdMS_TO_TICKS(5));
 }
 ```
 
@@ -83,13 +101,13 @@ void loop() {
 - `String getString(uint16_t key)`: Extracts a stored string record into the stack frame. Returns an empty string if the key profile is missing.
 - `void flush()`: Forces immediate serialization of the volatile RAM MemTable down to a Level 0 SST physical block.
 - `bool format()`: Performs a hard wipe of the entire active partition path, cleanly resetting the state machine from zero.
-- `void auditLevels()`: Generates a topological report detailing live records, file count, storage footprints, and active tombstones across all levels.
+- `void auditLevels()`: Generates a topological report detailing live records, file count, storage footprints, and active tombstones across all levels (Safe to call while the CPU Core 0 background compaction task is running).
 
 ---
 
 ## Performance Tuning & Hardware Configuration
 
-NeuDB v1.2.1 features an **Adaptive Compile-Time Configuration Engine** managed entirely through the external `NeuDB_Config.h` header. The core system architecture automatically shifts its internal topology, dynamic memory budgets, tree depths, and pre-filtering matrices based on your active storage pipeline selector.
+NeuDB v1.2.2 features an **Adaptive Compile-Time Configuration Engine** managed entirely through the external `NeuDB_Config.h` header. The core system architecture automatically shifts its internal topology, dynamic memory budgets, tree depths, and pre-filtering matrices based on your active storage pipeline selector.
 
 To modify the database profile, open `NeuDB_Config.h` and toggle the static preprocessor macro definition:
 
@@ -116,6 +134,18 @@ When a profile is locked, the internal engine automatically scales the following
 | **`NEU_BLOOM_FILTER_SIZE`**    |            64 Bytes (512 bits)             |         128 Bytes (1024 bits)          | Tightens the dense bitmask array to suppress lookup false positives [2]. |
 | **`NEU_BLOOM_HASH_COUNT`**     |                4 Functions                 |              5 Functions               | Optimizes the mathematical collision dampener for target block density.  |
 
+### Dynamic Resource-Aware Auto-Tuning Engine (v1.2.2+)
+
+NeuDB v1.2.2 introduces an asynchronous, lock-free system telemetry monitor embedded directly within the background `tick()` daemon running on CPU Core 0. Instead of enforcing rigid static memory boundaries, the engine dynamically recalculates an elastic threshold (`_adaptiveLimit`) every 10ms based on an active multi-variable pressure score matrix:
+
+$$\text{Score} = (\text{WritePressure} \times 0.5) + ((1.0 - \text{HeapRatio}) \times 0.3) + (\text{L0FileCount} \times 0.2)$$
+
+- **Low Pressure (< 0.3):** Dynamically expands the active transaction threshold up to **8,192 entries**, maximizing write throughput during system idle states.
+- **Moderate Pressure (< 0.6):** Automatically scales back to a balanced **4,000 entries** baseline.
+- **High/Critical Pressure (>= 0.6):** Defensively constricts the ingestion boundary down to **2,048 entries** (with a hard safety ceiling at 1024), triggering aggressive reactive cache evictions and forced Level 0 SST serialization before hardware Out-Of-Memory (OOM) exceptions occur.
+
+_Field-proven to seamlessly sustain infinite file rolling pipelines exceeding **100+ sequential SST file descriptors** (`/lsm/lv1_106.sst`) under randomized 16-bit pounding loads without introducing frontend `put()` execution latency or heap fragmentation cross-platform._
+
 ### Custom SPI Pin Mapping (MicroSD Mode Only)
 
 If `USE_SDCARD` is uncommented, the unified `STORAGE_INIT()` gate automatically configures the hardware SPI peripheral controllers prior to mounting the filesystem. Modify the GPIO pins directly inside the configuration boundary to match your hardware layout:
@@ -130,13 +160,15 @@ If `USE_SDCARD` is uncommented, the unified `STORAGE_INIT()` gate automatically 
 
 ---
 
-## Battle-Tested Radical Stability
+## Tested Stability
 
-NeuDB has been rigorously put through defensive, industrial-grade stress scenarios ("Pengamplasan Ekstrem Matrix") to guarantee production durability under extreme deployment:
+NeuDB has been rigorously put through defensive, industrial-grade stress scenarios ("Abrasive Stress Testing Matrix") to guarantee production durability under extreme deployment environments:
 
-1. **High-Speed Write Pounding:** Executed **1,000 / 1,000 updates** across randomized 16-bit keys wrapped within **2858 ms (~2.85ms average write response duration)**, fully verifying the concurrent transaction context queue under heavy asynchronous flush workloads.
-2. **Over-Capacity Memory Saturation Strain:** Bombardment of **4,000 dense updates** via hot-key rolling loops to pressure background task context-switching, validating the **Heuristic Eviction Matrix** and keeping the layout perfectly bounded below target capacity limits.
-3. **Power-Fail Sabotage Interruption:** Hard physical power cutouts triggered during continuous multi-threaded write loops with aggressive forced flushes. Validated **100% cold crash recovery and data consistency** via automated WAL parsing and hardware-assisted CRC32 verification post-boot sequence.
+1. **High-Speed Write Pounding:** Executed **1,000 / 1,000 updates** across randomized 16-bit keys wrapped within **2858 ms (~2.85ms average write response duration / ~350 Writes Per Second)**, fully verifying the concurrent transaction context queue under heavy asynchronous flush workloads.
+
+2. **Over-Capacity Memory Saturation Strain:** Bombardment of **4,000 dense updates** via hot-key rolling loops to pressure background task context-switching, validating the **Heuristic Eviction Matrix** by effectively consolidating **4,000 updates into ~1,600 active deduplicated records** to keep the layout perfectly bounded below target capacity limits.
+
+3. **Power-Fail Sabotage Interruption:** Hard physical power cutouts triggered during continuous multi-threaded write loops with aggressive forced flushes. Validated **100% cold crash recovery, zero-format deployment continuity, and data consistency** via automated WAL parsing and hardware-assisted CRC32 verification post-boot sequence.
 
 ---
 

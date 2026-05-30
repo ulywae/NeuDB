@@ -1,6 +1,6 @@
 #include "NeuLSMDB/DB_Token.h"
-
 #include "NeuLSMDB/NeuLSMDB_FS.h"
+
 #include <Arduino.h>
 #include <list>
 #include <memory>
@@ -324,6 +324,13 @@ void NeuLSMDB_FS::tick()
         return;
 
     // NOTE: Allow tick() to execute concurrently without holding any global lock mutex constraints.
+
+    // ========================================================================
+    // PREDICTIVE RESOURCE-AWARE AUTO-TUNING
+    // ========================================================================
+    // Asynchronously compute current hardware stress matrices (RAM heap, write volume, L0 file pressure)
+    // and recalculate the elastic _adaptiveLimit threshold before checking boundaries.
+    tuneMemtable();
 
     // 2. Evaluate and handle periodic Write-Ahead Log serialization (flushWAL) every 200ms
     if (millis() - _lastFlush >= 200)
@@ -772,10 +779,10 @@ void NeuLSMDB_FS::replayWAL()
         {
             // If this is a new key, increment the atomic count of MemTable entries and the System Total.
             __atomic_add_fetch(&_memCount, 1, __ATOMIC_SEQ_CST);
-            __atomic_add_fetch(&_totalEntryCount, 1, __ATOMIC_SEQ_CST); // PERBAIKAN 2
+            __atomic_add_fetch(&_totalEntryCount, 1, __ATOMIC_SEQ_CST);
         }
 
-        // Masukkan entri baru / update entri lama
+        // Enter new entry / update old entry
         _memBytes += sz;
         mapMem[key] = std::move(e);
     }
@@ -1618,10 +1625,10 @@ void NeuLSMDB_FS::auditLevels()
     Serial.println(F("\n>>> === NEUDB LSM-TREE TOPOLOGY AUDIT === <<<"));
 
     // METRICS RECONCILIATION: Fetch total live database counters using atomic sequential consistency
-    size_t totalSekarang = __atomic_load_n(&_totalEntryCount, __ATOMIC_SEQ_CST);
+    size_t totalNow = __atomic_load_n(&_totalEntryCount, __ATOMIC_SEQ_CST);
 
     Serial.printf("Active Records: %d | Capacity Limit: %d | Eviction Policy: %s\n",
-                  totalSekarang, MAX_TOTAL_ENTRIES, _overrideWhenFull ? "OVERRIDE" : "REJECT");
+                  totalNow, MAX_TOTAL_ENTRIES, _overrideWhenFull ? "OVERRIDE" : "REJECT");
 
     for (int lvl = 0; lvl < MAX_LEVEL; lvl++)
     {
