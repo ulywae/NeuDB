@@ -45,6 +45,29 @@ Version 2.0.0 introduces a revolutionary **Twin-Engine Storage Pipeline** that c
 
 ---
 
+## Installation
+
+### Arduino Library Manager (Recommended)
+
+1. In the Arduino IDE, go to **Sketch > Include Library > Manage Libraries...**
+2. Search for **NeuDB**
+3. Click **Install**
+
+### PlatformIO
+
+```ini
+lib_deps = ulywae/NeuDB
+```
+
+### Manual Installation (Arduino)
+
+1. Download the repository as `.zip`
+2. Open Arduino IDE
+3. Go to **Sketch > Include Library > Add .ZIP Library**
+4. Select the downloaded file
+
+---
+
 ## Quick Start
 
 ### 1. Developer-Friendly API Interface
