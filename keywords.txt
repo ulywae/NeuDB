@@ -1,30 +1,49 @@
 #######################################
-# Syntax Coloring Map For NeuDB
+# Syntax Coloring Map For NeuDB v2.0.0
 #######################################
 
 #######################################
 # Datatypes and Classes (KEYWORD1)
 #######################################
 NeuDB	KEYWORD1
-NeuLSMDB_FS	KEYWORD1
+NeuLSMDB	KEYWORD1
+NeuLSMDB_LogIterator	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
 #######################################
-begin	KEYWORD2
 init	KEYWORD2
+format	KEYWORD2
+flush	KEYWORD2
+tick	KEYWORD2
 put	KEYWORD2
 get	KEYWORD2
+del	KEYWORD2
 putVar	KEYWORD2
 getVar	KEYWORD2
 putString	KEYWORD2
 getString	KEYWORD2
-flush	KEYWORD2
-auditLevels	KEYWORD2
-format	KEYWORD2
-setOverrideWhenFull	KEYWORD2
-getOverrideWhenFull	KEYWORD2
+putLog	KEYWORD2
+getLog	KEYWORD2
+getTotalLog	KEYWORD2
+deleteLog	KEYWORD2
+putLogVar	KEYWORD2
+getLogVar	KEYWORD2
+logIterator	KEYWORD2
+nextLog	KEYWORD2
+getLogValue	KEYWORD2
+getLogValueVar	KEYWORD2
+getLogIndex	KEYWORD2
+getLogTimestamp	KEYWORD2
+closeLog	KEYWORD2
 getVersion	KEYWORD2
+auditLevels	KEYWORD2
+
+#######################################
+# Constants and Literals (LITERAL1)
+#######################################
+USE_LITTLEFS	LITERAL1
+USE_SDCARD	LITERAL1
 
 #######################################
 # Instances (KEYWORD2)

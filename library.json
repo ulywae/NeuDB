@@ -1,7 +1,7 @@
 {
   "name": "NeuDB",
-  "version": "1.2.2",
-  "description": "Ultra-lean, resource-adaptive 16-bit LSM-Tree embedded storage engine with power-fail safety and multi-media VFS (LittleFS/MicroSD) support for ESP32 architectures.",
+  "version": "2.0.0",
+  "description": "Ultra-lean, transactional Twin-Engine LSM-Tree storage engine with power-fail resilient lifecycle protection for ESP32.",
   "keywords": [
     "database", 
     "lsm-tree", 

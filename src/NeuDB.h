@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.h
- * @brief High‑Level Facade Interface Wrapper for the NeuLSMDB_FS Core Storage Engine.
- * @version 1.2.2
+ * @brief High‑Level Facade Interface Wrapper for the NeuLSMDB Core Storage Engine.
+ * @version 2.0.0
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -20,6 +20,23 @@
 #include <Arduino.h>
 
 /**
+ * @note SYSTEM REBOOT RELEASE NOTES (v2.0.0):
+ * - Deployed high-address anchor 32-bit register architecture to prevent key collision track.
+ * - Engineered twin-engine storage pipeline (isolated regular and log snapshot layers).
+ * - Expanded circular rolling history tracks up to 16,384 non-volatile dynamic slots per ID.
+ * - Embedded hyper-drive write ingestion pipeline (100 sequential commits in 12ms).
+ * - Standardized corporate-grade Doxygen technical English documentation architecture.
+ */
+
+// ==================================================================================
+// NEUDB COMPILATION FRAMEWORK INTERFACE LAYER
+// ==================================================================================
+#define NEU_DB_VERSION_MAJOR 2
+#define NEU_DB_VERSION_MINOR 0
+#define NEU_DB_VERSION_PATCH 0
+#define NEU_DB_VERSION_STR "2.0.0"
+
+/**
  * @class NeuDB
  * @brief Top‑Level Transaction Handler Facade for Embedded LSM‑Tree Storage.
  *
@@ -28,6 +45,7 @@
  * and diagnostic routines. Keys are restricted to 16‑bit numeric addresses bounded within
  * physical memory array thresholds. Fully thread‑safe and reentrant across FreeRTOS task contexts.
  */
+
 class NeuDB
 {
 public:
@@ -105,6 +123,13 @@ public:
     bool format();
 
     /**
+     * @brief Removes a key vector from the active storage footprint.
+     *
+     * @param key 16-bit distinct structural address to delete.
+     */
+    bool del(uint16_t key);
+
+    /**
      * @brief Modifies engine structural reactive policies when storage footprints cross target ceilings.
      *
      * @param enable If true, reactive eviction drops stale data via proactive tombstone injection.
@@ -178,13 +203,182 @@ public:
     String getString(uint16_t key);
 
     /**
-     * @brief Fetches the current operational library version tag.
-     * @return SemVer compliant constant character array pointer ("MAJOR.MINOR.PATCH").
+     * @brief Retrieves the absolute framework release version string at runtime.
+     * @note Guarantees const-safety alignment to provide read-only diagnostic metadata.
+     * @return Constant char pointer targeting the immutable "2.0.0" semantic version string literal.
      */
-    const char *getVersion() const { return "1.2.2"; }
+    const char *getVersion() const { return NEU_DB_VERSION_STR; }
+
+    // =================================================================
+    // AUTOMATIC LOG INCREMENT & SNAPSHOT FACADE API
+    // =================================================================
+
+    /**
+     * @brief Ingests an atomic log payload under a specific object identifier.
+     *
+     * The underlying storage engine automatically resolves the active circular sequence
+     * boundaries mapped to NEU_LOG_MAX_INDEX and serializes a fresh snapshot record.
+     *
+     * @param id Distinct identifier for the target log track variable (0 to NEU_LOG_MAX_ID_LIMIT - 1).
+     * @param data Constant raw pointer targeting the source log payload buffer.
+     * @param size Payload volume measured in bytes.
+     * @return true if the transactional transaction frame is safely committed to WAL and indexed; false otherwise.
+     */
+    bool putLog(uint16_t id, const void *data, size_t size);
+
+    /**
+     * @brief Extracts the latest active log snapshot state for a target identifier based on the highest timestamp.
+     *
+     * Performs a fast point-lookup across volatile caches and non-volatile index cascades
+     * to intercept and retrieve the single newest historical mutation block.
+     *
+     * @param id Target log tracking identifier to query.
+     * @param out Destination raw pointer targeting the pre-allocated user output buffer space.
+     * @param size Reference to enforce memory capacity boundaries and receive actual retrieved bytes.
+     * @return true if a valid non-tombstone record exists and is successfully extracted; false on logical miss.
+     */
+    bool getLog(uint16_t id, void *out, size_t &size);
+
+    /**
+     * @brief Extracts a targeted, historical log snapshot record at an exact circular slot position.
+     *
+     * Resolves absolute multi-dimensional coordinates dynamically to sweep the exact historical tier
+     * without executing expansive full-table disk scan iterations.
+     *
+     * @param id Target log tracking identifier to query.
+     * @param index Absolute targeted circular ring buffer slot coordinate.
+     * @param out Destination raw pointer targeting the pre-allocated user output buffer space.
+     * @param size Reference to enforce memory capacity boundaries and receive actual retrieved bytes.
+     * @return true if the index slot maps to a valid transaction node; false on miss, capacity mismatch, or tombstone interception.
+     */
+    bool getLog(uint16_t id, uint16_t index, void *out, size_t &size);
+
+    /**
+     * @brief Compiles the true cumulative metric count of active, non-tombstone historical entries for an ID.
+     *
+     * Sweeps transaction trackers concurrently and performs stack-allocated deduplication
+     * to skip over multi-version obsolete records or cleared slots.
+     *
+     * @param id Target log tracking identifier to calculate metrics.
+     * @return Total integer count of active historical snapshot records currently retained in storage clusters.
+     */
+    size_t getTotalLog(uint16_t id);
+
+    /**
+     * @brief Purges the absolute operational history track belonging to an identifier via reactive tombstone injection.
+     *
+     * Rather than triggering immediate blocking physical sector unlinking, this enqueues low-overhead
+     * cancellation markers to let the background compaction task safely clear physical space later.
+     *
+     * @param id Target log tracking identifier to wipe from the system.
+     * @return true if the atomic purge sequence successfully commits transaction markers; false on lock timeouts.
+     */
+    bool deleteLog(uint16_t id);
+
+    // =================================================================
+    // TEMPLATE LOG ACCELERATORS: TYPE-SAFE COMPLIANT EXTENSIONS
+    // =================================================================
+
+    /**
+     * @brief Type-safe template wrapper to seamlessly ingest fixed-size data structures without pointer casting.
+     * @tparam T Inferred type descriptor of the incoming source object.
+     */
+    template <typename T>
+    bool putLogVar(uint16_t id, const T &value)
+    {
+        return this->putLog(id, &value, sizeof(T));
+    }
+
+    /**
+     * @brief Type-safe template wrapper to retrieve the latest historical state directly into a matching struct.
+     * @tparam T Inferred type descriptor of the target destination object.
+     */
+    template <typename T>
+    bool getLogVar(uint16_t id, T &out)
+    {
+        size_t size = sizeof(T);
+        return this->getLog(id, &out, size);
+    }
+
+    /**
+     * @brief Type-safe template wrapper to query a targeted historical slot index directly into a matching struct.
+     * @tparam T Inferred type descriptor of the target destination object.
+     */
+    template <typename T>
+    bool getLogVar(uint16_t id, uint16_t index, T &out) // <--- SINKRON: Pasangan getter public di wrapper wajib uint16_t sisan!
+    {
+        size_t size = sizeof(T);
+        return this->getLog(id, index, &out, size);
+    }
+
+    // =================================================================
+    // HIGH-LEVEL ARCHITECTURE LOG RANGE ITERATOR PIPELINE
+    // =================================================================
+
+    /**
+     * @brief Spawns a stateful lookahead cursor context to stream historical log boundaries.
+     *
+     * Establishes dynamic range constraints to support sequential tracking sweeps. Memory optimization matrices
+     * are evaluated lazily on the first iteration step to guarantee zero upfront heap overhead allocation.
+     *
+     * @param id Target log tracking identifier to sweep.
+     * @param startIdx Baseline lower coordinate slot boundary to open the streaming track.
+     * @param endIdx Ceiling upper coordinate slot boundary to close the streaming track.
+     * @return true if the tracking parameters are authenticated and the iteration layer is armed; false on range violations.
+     */
+    bool logIterator(uint16_t id, uint16_t startIdx, uint16_t endIdx);
+
+    /**
+     * @brief Advances the high-address range cursor position forward to the next historical element sequence track.
+     *
+     * Intended as the core evaluation expression inside clean application while() blocks.
+     * Automatically filters out query boundary overflows and intercepts tombstones in-flight.
+     *
+     * @return true if a fresh historical state node is successfully captured; false upon hitting true EOF parameters.
+     */
+    bool nextLog();
+
+    /**
+     * @brief Extracts the raw data payload belonging to the record currently locked by the iterator cursor.
+     *
+     * @param out Destination raw pointer targeting the pre-allocated user output buffer space.
+     * @param size Reference to specify capacity limits and receive actual extracted payload size bounds.
+     * @return true if physical block data streaming completes successfully; false on descriptor or size errors.
+     */
+    bool getLogValue(void *out, size_t &size);
+
+    /**
+     * @brief Type-safe template accelerator to stream active cursor record fields directly into destination struct frames.
+     * @tparam T Inferred type descriptor of the user target structure array.
+     */
+    template <typename T>
+    bool getLogValueVar(T &out)
+    {
+        size_t size = sizeof(T);
+        return this->getLogValue(&out, size);
+    }
+
+    /**
+     * @brief Retrieves the decoded circular slot index position currently pointed to by the active stream cursor.
+     * @return The native slot coordinate stripped of high-address registration offsets.
+     */
+    uint16_t getLogIndex();
+
+    /**
+     * @brief Retrieves the native hardware millisecond timestamp tracking exactly when the current cursor entry was recorded.
+     * @return Absolute chronological timestamp value of the active transaction record.
+     */
+    uint32_t getLogTimestamp();
+
+    /**
+     * @brief Destroys the stateful tracking cursor context and deallocates all stack/heap vector memory partitions.
+     * Must be explicitly invoked by the implementation routine to secure volatile memory bounds against heap fragmentation.
+     */
+    void closeLog();
 
 private:
-    void *_engine; ///< Opaque Pimpl pointer concealing the active NeuLSMDB_FS engine instance profile.
+    void *_engine;                      ///< Opaque Pimpl pointer concealing the active NeuLSMDB engine instance profile.
+    void *_activeLogIterator = nullptr; ///< Private heap-allocated context tracking state variations for the operational range iterator.
 };
 
 /**

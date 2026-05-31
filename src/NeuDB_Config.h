@@ -1,7 +1,7 @@
 /**
  * @file NeuDB_Config.h
- * @brief Adaptive Compile-Time Configuration Profiles for the NeuLSMDB_FS Engine.
- * @version 1.2.2
+ * @brief Adaptive Compile-Time Configuration Profiles for the NeuLSMDB Engine.
+ * @version 2.0.0
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -58,6 +58,23 @@
 #define NEU_COMPACT_BUDGET_KB 16     ///< Max runtime dynamic heap allocated memory allowed during background compaction merges
 #define NEU_BLOOM_FILTER_SIZE 64     ///< 64-Byte (512-bit) probabilistic filter matrix size allocating bits per SST file
 #define NEU_BLOOM_HASH_COUNT 4       ///< Number of distinct hardware-assisted hash transformations mapped per key entry
+
+// ==================================================================================
+// SYSTEM LOG STRUCTURAL CONSTRAINTS & HISTORY CEILING LIMITS (LITTLEFS PROFILE CONFIGURATION)
+// ==================================================================================
+
+/**
+ * @note Hard upper boundary for unique physical tracking object identifiers (2^6).
+ * This establishes the maximum sequence slot width to prevent bitwise register overlaps.
+ */
+#define NEU_LOG_MAX_ID_LIMIT 64
+
+/**
+ * @note Dynamic historical snapshot quota retained per unique tracking ID.
+ * Triggered automatically by the background compaction task to drop expired log sectors.
+ */
+#define NEU_MAX_LOG_HISTORY 1024
+
 /** @} */
 
 #elif defined(USE_SDCARD)
@@ -83,6 +100,23 @@
 #define NEU_COMPACT_BUDGET_KB 32      ///< Increased background merge worker buffer capacity allocating cross-level streaming
 #define NEU_BLOOM_FILTER_SIZE 128     ///< 128-Byte (1024-bit) dense bitmask array to depress false-positive lookup slips
 #define NEU_BLOOM_HASH_COUNT 5        ///< Mathematical hash collision dampener count optimized for 128-byte density matrices
+
+// ==================================================================================
+// SYSTEM LOG STRUCTURAL CONSTRAINTS & HISTORY CEILING LIMITS (SDCARD PROFILE CONFIGURATION)
+// ==================================================================================
+
+/**
+ * @note Hard capacity limit for unique hardware-registered object identifiers (2^7).
+ * Anchors the absolute multi-way indexing bounds required for stable 32-bit register alignment.
+ */
+#define NEU_LOG_MAX_ID_LIMIT 128
+
+/**
+ * @note Massive historical retention snapshot ceiling targeted for high-capacity external storage.
+ * Enforces strict incremental counter pruning during background storage cluster merges.
+ */
+#define NEU_MAX_LOG_HISTORY 10240
+
 /** @} */
 #endif
 

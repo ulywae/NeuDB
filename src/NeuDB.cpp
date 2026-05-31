@@ -1,19 +1,19 @@
 /**
  * @file NeuDB.cpp
  * @brief Implementation Layer for the Top‑Level NeuDB Facade Wrapper.
- * @version 1.2.2
+ * @version 2.0.0
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
  * This file provides the concrete implementation for the ultra-lean NeuDB facade,
- * passing all transactional execution pathways down to the core NeuLSMDB_FS
+ * passing all transactional execution pathways down to the core NeuLSMDB
  * storage pipeline. It handles dynamic pointer translation, heap-safety wrappers,
  * and provides specialized buffer tracking mechanisms for dynamic Arduino String types.
  */
 
 #include "NeuLSMDB/DB_Token.h"
 #include "NeuDB.h"
-#include "NeuLSMDB/NeuLSMDB_FS.h"
+#include "NeuLSMDB/NeuLSMDB.h"
 
 /**
  * @brief Constructor — Allocates the physical core storage pipeline on the heap.
@@ -24,7 +24,7 @@
 NeuDB::NeuDB()
 {
     // Allocate the actual database engine in heap memory
-    _engine = static_cast<void *>(new NeuLSMDB_FS());
+    _engine = static_cast<void *>(new NeuLSMDB());
 }
 
 /**
@@ -36,7 +36,7 @@ NeuDB::NeuDB()
 NeuDB::~NeuDB()
 {
     // Clean up engine memory when the object is destroyed
-    delete static_cast<NeuLSMDB_FS *>(_engine);
+    delete static_cast<NeuLSMDB *>(_engine);
 }
 
 /**
@@ -48,7 +48,7 @@ NeuDB::~NeuDB()
  */
 bool NeuDB::init()
 {
-    return static_cast<NeuLSMDB_FS *>(_engine)->init();
+    return static_cast<NeuLSMDB *>(_engine)->init();
 }
 
 /**
@@ -64,7 +64,7 @@ bool NeuDB::init()
  */
 bool NeuDB::put(uint16_t key, const void *data, size_t size)
 {
-    return static_cast<NeuLSMDB_FS *>(_engine)->put(key, data, size);
+    return static_cast<NeuLSMDB *>(_engine)->put(key, data, size);
 }
 
 /**
@@ -80,7 +80,7 @@ bool NeuDB::put(uint16_t key, const void *data, size_t size)
  */
 bool NeuDB::get(uint16_t key, void *out, size_t &size)
 {
-    return static_cast<NeuLSMDB_FS *>(_engine)->get(key, out, size);
+    return static_cast<NeuLSMDB *>(_engine)->get(key, out, size);
 }
 
 /**
@@ -88,7 +88,7 @@ bool NeuDB::get(uint16_t key, void *out, size_t &size)
  */
 void NeuDB::flush()
 {
-    static_cast<NeuLSMDB_FS *>(_engine)->flush();
+    static_cast<NeuLSMDB *>(_engine)->flush();
 }
 
 /**
@@ -96,7 +96,7 @@ void NeuDB::flush()
  */
 void NeuDB::auditLevels()
 {
-    static_cast<NeuLSMDB_FS *>(_engine)->auditLevels();
+    static_cast<NeuLSMDB *>(_engine)->auditLevels();
 }
 
 /**
@@ -106,7 +106,22 @@ void NeuDB::auditLevels()
  */
 bool NeuDB::format()
 {
-    return static_cast<NeuLSMDB_FS *>(_engine)->format();
+    return static_cast<NeuLSMDB *>(_engine)->format();
+}
+
+/**
+ * @brief Direct point-lookup delete pathway forwarding mechanism.
+ *
+ * Maps execution pathways directly to the underlying core `del()` pipeline, executing tiered
+ * traversals from memory trees down to binary-searched physical disk storage levels.
+ *
+ * @param key 16－bit distinct source tracking query index.
+ * @return true if point-lookup hits a valid data record matching the index coordinate; false otherwise.
+ */
+bool NeuDB::del(uint16_t key)
+{
+    // Implementation Forwarding: Pass the target key registration address down to the clean core LSM engine.
+    return static_cast<NeuLSMDB *>(_engine)->del(key);
 }
 
 /**
@@ -116,7 +131,7 @@ bool NeuDB::format()
  */
 void NeuDB::setOverrideWhenFull(bool enable)
 {
-    static_cast<NeuLSMDB_FS *>(_engine)->setOverrideWhenFull(enable);
+    static_cast<NeuLSMDB *>(_engine)->setOverrideWhenFull(enable);
 }
 
 /**
@@ -126,7 +141,7 @@ void NeuDB::setOverrideWhenFull(bool enable)
  */
 bool NeuDB::getOverrideWhenFull() const
 {
-    return static_cast<NeuLSMDB_FS *>(_engine)->getOverrideWhenFull();
+    return static_cast<NeuLSMDB *>(_engine)->getOverrideWhenFull();
 }
 
 /**
@@ -165,6 +180,115 @@ String NeuDB::getString(uint16_t key)
         return String(buffer);
     }
     return String(""); // Return empty string if key does not exist
+}
+
+// =================================================================
+// OPAQUE PASS-THROUGH FOR LOGGING (PIMPL FORWARDING LIFECYCLE)
+// =================================================================
+
+bool NeuDB::putLog(uint16_t id, const void *data, size_t size)
+{
+    // Implementation Forwarding: Cast the opaque context pointer directly to the real
+    // implementation class to invoke the 32-bit virtual layout pipeline safely.
+    return static_cast<NeuLSMDB *>(_engine)->putLog(id, data, size);
+}
+
+bool NeuDB::getLog(uint16_t id, void *out, size_t &size)
+{
+    // Route Delegation: Forward the Point-Lookup query channel to resolve the single newest mutation frame.
+    return static_cast<NeuLSMDB *>(_engine)->getLog(id, out, size);
+}
+
+bool NeuDB::getLog(uint16_t id, uint16_t index, void *out, size_t &size)
+{
+    // Alignment Safety: Pass the 16-bit expanded index slot coordinate downstream.
+    // This bridges the clean external user API with the internal 11-bit/14-bit rolling mask.
+    return static_cast<NeuLSMDB *>(_engine)->getLog(id, index, out, size);
+}
+
+size_t NeuDB::getTotalLog(uint16_t id)
+{
+    // Metrics Accumulation Pass: Invoke the isolated stack-allocated deduplication counter track.
+    return static_cast<NeuLSMDB *>(_engine)->getTotalLog(id);
+}
+
+bool NeuDB::deleteLog(uint16_t id)
+{
+    // Reactive Eviction Pass: Inject transactional cancel markers at the targeted object track.
+    return static_cast<NeuLSMDB *>(_engine)->deleteLog(id);
+}
+
+// =================================================================
+// STATEFUL ITERATOR DATA STREAMING EXTENSIONS
+// =================================================================
+
+bool NeuDB::logIterator(uint16_t id, uint16_t startIdx, uint16_t endIdx)
+{
+    // Memory Protection Guard: Proactively intercept and destroy any lingering historical range cursors
+    // to prevent volatile memory resource leaks on the FreeRTOS heap structure.
+    if (_activeLogIterator)
+    {
+        delete static_cast<NeuLSMDB_LogIterator *>(_activeLogIterator);
+    }
+
+    NeuLSMDB *core = static_cast<NeuLSMDB *>(_engine);
+
+    // Heap Allocation Phase: Instantiate the real stateful tracking context on the stack partition.
+    // The concrete instance pointer is securely concealed inside the opaque _activeLogIterator storage gate.
+    _activeLogIterator = new NeuLSMDB_LogIterator(core, id, startIdx, endIdx);
+
+    // Context Evaluation: Verify whether the runtime tracker context was securely armed.
+    return (_activeLogIterator != nullptr);
+}
+
+bool NeuDB::nextLog()
+{
+    if (!_activeLogIterator)
+        return false;
+
+    // Cursor Step Advancement: Drive the internal multi-version sorting and filtering sweep loop forward.
+    return static_cast<NeuLSMDB_LogIterator *>(_activeLogIterator)->next();
+}
+
+bool NeuDB::getLogValue(void *out, size_t &size)
+{
+    // Safety Boundary Guard: Instantly abort runtime block streaming if the tracking context is uninitialized.
+    if (!_activeLogIterator)
+        return false;
+
+    // Zero-Copy Direct Forwarding: Cast back to the operational stream iterator block
+    // to extract the physical telemetry data frame from the active lookup coordinate.
+    return static_cast<NeuLSMDB_LogIterator *>(_activeLogIterator)->getValue(out, size);
+}
+
+uint16_t NeuDB::getLogIndex()
+{
+    if (!_activeLogIterator)
+        return 0;
+
+    // Coordinate Decoding Pass: Extract the raw circular slot sequence number from the active register tracking state.
+    return static_cast<NeuLSMDB_LogIterator *>(_activeLogIterator)->getIndex();
+}
+
+uint32_t NeuDB::getLogTimestamp()
+{
+    if (!_activeLogIterator)
+        return 0;
+
+    // Temporal Resolution Pass: Extract the cached millisecond epoch assigned during transaction registration.
+    return static_cast<NeuLSMDB_LogIterator *>(_activeLogIterator)->getTimestamp();
+}
+
+void NeuDB::closeLog()
+{
+    if (_activeLogIterator)
+    {
+        // Deallocation Phase: Purge the active heap-allocated range cursor cleanly.
+        delete static_cast<NeuLSMDB_LogIterator *>(_activeLogIterator);
+
+        // Reset the pointer reference to a secure null state boundary to prevent fatal dangling reference traps.
+        _activeLogIterator = nullptr;
+    }
 }
 
 /**
