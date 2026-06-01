@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.h
  * @brief High‑Level Facade Interface Wrapper for the NeuLSMDB Core Storage Engine.
- * @version 2.0.0
+ * @version 2.1.0
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -19,22 +19,18 @@
 #include <cstddef>
 #include <Arduino.h>
 
-/**
- * @note SYSTEM REBOOT RELEASE NOTES (v2.0.0):
- * - Deployed high-address anchor 32-bit register architecture to prevent key collision track.
- * - Engineered twin-engine storage pipeline (isolated regular and log snapshot layers).
- * - Expanded circular rolling history tracks up to 16,384 non-volatile dynamic slots per ID.
- * - Embedded hyper-drive write ingestion pipeline (100 sequential commits in 12ms).
- * - Standardized corporate-grade Doxygen technical English documentation architecture.
- */
-
 // ==================================================================================
 // NEUDB COMPILATION FRAMEWORK INTERFACE LAYER
 // ==================================================================================
 #define NEU_DB_VERSION_MAJOR 2
-#define NEU_DB_VERSION_MINOR 0
+#define NEU_DB_VERSION_MINOR 1
 #define NEU_DB_VERSION_PATCH 0
-#define NEU_DB_VERSION_STR "2.0.0"
+#define NEU_DB_VERSION_STR "2.1.0"
+
+// =================================================================
+// FORWARD DECLARATION LAYER: ZERO‑HEADER POLLUTION GUARANTEE
+// =================================================================
+class Stream; ///< Abstract framework I/O channel forward‑declaration
 
 /**
  * @class NeuDB
@@ -376,7 +372,28 @@ public:
      */
     void closeLog();
 
+    // =================================================================
+    // BULK DATA EXPORT / DUMP UTILITY GATEWAY APIs
+    // =================================================================
+
+    /**
+     * @brief Streams the entire active regular Key‑Value dataset out to an external channel.
+     * @param targetStream Pointer to an active Arduino Stream instance (e.g., &Serial, &backupFile).
+     * @return true if entries were successfully extracted and serialized; false otherwise.
+     */
+    bool exportKeyValuesToStream(Stream *targetStream);
+
+    /**
+     * @brief Streams the entire multi‑version circular log dataset out to an external channel.
+     * @param targetStream Pointer to an active Arduino Stream instance (e.g., &Serial, &telnetClient).
+     * @return true if records were successfully extracted and serialized; false otherwise.
+     */
+    bool exportLogsToStream(Stream *targetStream);
+
 private:
+    // =================================================================
+    // PRIVATE INTERNAL ARCHITECTURAL GUARD
+    // =================================================================
     void *_engine;                      ///< Opaque Pimpl pointer concealing the active NeuLSMDB engine instance profile.
     void *_activeLogIterator = nullptr; ///< Private heap-allocated context tracking state variations for the operational range iterator.
 };

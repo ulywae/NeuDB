@@ -1,4 +1,4 @@
-# NeuDB v2.0.0 Subsystem Pipeline & Error Handling Topology
+# NeuDB Subsystem Pipeline & Error Handling Topology
 
 This document details the low-level execution architecture, thread isolation boundaries, multi-core scheduling maps, and transactional fault-tolerance protocols engineered into the NeuDB storage engine.
 
@@ -33,7 +33,7 @@ This routine executes exactly once during the ESP32 hardware bootstrap sequence 
 
 ## 2. Data Ingestion Pathways (put() / putLog())
 
-NeuDB v2.0.0 features a strict **Twin-Engine Storage Pipeline** separating regular point-in-time transactions from massive sequential telemetric log tracking. Both ingest paths are completely non-blocking, thread-safe, and reentrant across FreeRTOS task contexts [1, 2].
+NeuDB v2.x.x features a strict **Twin-Engine Storage Pipeline** separating regular point-in-time transactions from massive sequential telemetric log tracking. Both ingest paths are completely non-blocking, thread-safe, and reentrant across FreeRTOS task contexts.
 
 ### A. Regular Key-Value Ingestion Pipeline (`put`)
 
@@ -149,7 +149,7 @@ The FreeRTOS Core 1 scheduler slices execution loops to monitor structural flush
 
 ## 4. Layer Consolidation & Rolling Pruning Phase (tickCompact() / tickCompactLog())
 
-When Level 0 triggers structural density parameters, the background compaction worker thread on CPU Core 1 handles K-way merge-sort consolidations progressively down to deep tiers to bound memory allocations [1, 2]:
+When Level 0 triggers structural density parameters, the background compaction worker thread on CPU Core 1 handles K-way merge-sort consolidations progressively down to deep tiers to bound memory allocations:
 
 ```text
 [State == MERGE_STREAM] ───> Initializes Min-Heap (Priority Queue) with base stream index metrics from active file readers.

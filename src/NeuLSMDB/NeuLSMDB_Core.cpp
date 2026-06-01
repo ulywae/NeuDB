@@ -49,12 +49,12 @@ NeuLSMDB::NeuLSMDB()
     _cacheUsed = 0;
     _adaptiveLimit = 4096;
     _compactState = IDLE;
-    _compactLogState = IDLE; // Setel IDLE pas awal urip
+    _compactLogState = IDLE;
     _overrideWhenFull = true;
     _totalEntryCount = 0;
 
     _job->active = false;
-    _jobLog->active = false; // Setel ora aktif pas awal
+    _jobLog->active = false;
 
     _systemReady = false;
     _stopTaskRequested = false;
@@ -586,6 +586,24 @@ bool NeuLSMDB::get(uint16_t key, void *out, size_t &size)
     {
         size = 0;
         return false; // Fast-fail early exit before acquiring mutex to optimize CPU cycles
+    }
+
+    // ========================================================================
+    // ADAPTIVE READ-STALL POLICY: CONCURRENCY DESCRIPTOR SATURATION BRAKE
+    // ========================================================================
+    size_t level0Density = GET_LEVELS()[0].size();
+
+    if (level0Density >= 16)
+    {
+        // Critical Saturation Boundary: Force a 4-millisecond reactive backoff window
+        // to allow the background K-Way Merge worker to clear out Level 0 file shards.
+        vTaskDelay(pdMS_TO_TICKS(4));
+    }
+    else if (level0Density >= 8)
+    {
+        // Elevated Pressure Alert: Execute a brief 1ms cooperative multitask yield
+        // to appease the ESP32 Task Watchdog Timer (TWDT) boundaries.
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
@@ -1562,7 +1580,7 @@ void NeuLSMDB::tickCompact()
         // =================================================================
         SSTHeader header;
         header.key = key;
-        header.size = winner.current.size; // 32-bit murni
+        header.size = winner.current.size;
         header.ts = bestTs;
         header.tombstone = winner.current.tombstone ? 1 : 0;
 

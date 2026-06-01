@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.cpp
  * @brief Implementation Layer for the Top‑Level NeuDB Facade Wrapper.
- * @version 2.0.0
+ * @version 2.1.0
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -289,6 +289,101 @@ void NeuDB::closeLog()
         // Reset the pointer reference to a secure null state boundary to prevent fatal dangling reference traps.
         _activeLogIterator = nullptr;
     }
+}
+
+// =================================================================
+// SYSTEM BULK DATA EXPORT / COMPACT WIRE-STREAMING EXTESIONS
+// =================================================================
+
+/**
+ * @brief Streams the entire active regular Key‑Value dataset out to an external channel.
+ *
+ * Invokes a cascading sweep scan across volatile memory and physical storage levels.
+ * Serializes live mutations into a zero-padding 4-byte packed wire header protocol.
+ *
+ * @param targetStream Pointer to an active Arduino Stream instance (e.g., &Serial, &backupFile).
+ * @return true if entries were successfully extracted and serialized; false otherwise.
+ */
+bool NeuDB::exportKeyValuesToStream(Stream *targetStream)
+{
+    if (!_engine || !targetStream)
+        return false;
+
+    // Local structural bridge to translate concrete datasets back into a binary serialization wire
+    auto kvBridge = [](uint32_t rawKey, const uint8_t *data, size_t size, void *arg)
+    {
+        Stream *output = static_cast<Stream *>(arg);
+        if (!output)
+            return;
+
+#pragma pack(push, 1)
+        struct NeuKVWireHeader
+        {
+            uint16_t regularKey; ///< Decoded clean 16-bit distinct dictionary index
+            uint16_t dataLength; ///< Explicit payload footprint dimension bounding the trailing block
+        };
+#pragma pack(pop)
+
+        NeuKVWireHeader header = {static_cast<uint16_t>(rawKey), static_cast<uint16_t>(size)};
+
+        // Pump atomic data packets: Stream 4-byte packet header followed immediately by raw payload block
+        output->write(reinterpret_cast<const uint8_t *>(&header), sizeof(NeuKVWireHeader));
+        output->write(data, size);
+    };
+
+    // Route delegation down to the concrete internal unified reuse scanning engine
+    size_t prevUsed = targetStream->available();
+    static_cast<NeuLSMDB *>(_engine)->exportKVDataset(kvBridge, targetStream);
+
+    return true;
+}
+
+/**
+ * @brief Streams the entire multi‑version circular log dataset out to an external channel.
+ *
+ * Executes a fast lower-bound range traversal using space-optimized MVCC bitmasks.
+ * Automatically decodes high-address register baseline offsets back into pure ring loop parameters.
+ *
+ * @param targetStream Pointer to an active Arduino Stream instance (e.g., &Serial, &telnetClient).
+ * @return true if records were successfully extracted and serialized; false otherwise.
+ */
+bool NeuDB::exportLogsToStream(Stream *targetStream)
+{
+    if (!_engine || !targetStream)
+        return false;
+
+    // Local structural bridge to decode the packed 32-bit internal register track before wire streaming
+    auto logBridge = [](uint32_t rawKey, const uint8_t *data, size_t size, void *arg)
+    {
+        Stream *output = static_cast<Stream *>(arg);
+        if (!output)
+            return;
+
+#pragma pack(push, 1)
+        struct NeuLogWireHeader
+        {
+            uint16_t logObjectId;   ///< Human-readable original telemetry tracking ID
+            uint16_t circularIndex; ///< Re-materialized native 14-bit rolling sequence marker
+            uint16_t dataLength;    ///< Explicit payload footprint dimension bounding the trailing block
+        };
+#pragma pack(pop)
+
+        // Bitwise Component Unpacking: Decode the high-offset virtual coordinate space automatically
+        uint32_t logSection = rawKey - NEU_LOG_KEY_OFFSET;
+        uint16_t originalId = static_cast<uint16_t>(logSection >> NEU_LOG_INDEX_BITS);
+        uint16_t originalIndex = static_cast<uint16_t>(logSection & NEU_LOG_INDEX_MASK);
+
+        NeuLogWireHeader header = {originalId, originalIndex, static_cast<uint16_t>(size)};
+
+        // Serialise packed structural packets directly onto the external non-blocking physical bus link
+        output->write(reinterpret_cast<const uint8_t *>(&header), sizeof(NeuLogWireHeader));
+        output->write(data, size);
+    };
+
+    // Forward the streaming execution context to the internal unified reuse scanning engine
+    static_cast<NeuLSMDB *>(_engine)->exportLogDataset(logBridge, targetStream);
+
+    return true;
 }
 
 /**

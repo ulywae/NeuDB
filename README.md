@@ -1,4 +1,4 @@
-# NeuDB v2.0.0
+# NeuDB
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform: Arduino](https://img.shields.io/badge/Platform-Arduino-00878F?logo=arduino&logoColor=white)](https://arduino.cc)
@@ -6,15 +6,15 @@
 
 > Ultra-Lean Embedded LSM-Tree Storage Engine with Power-Fail Resilient Lifespan Protection and Isolated Twin-Engine Rolling History Channels for ESP32.
 
-NeuDB (**NeuLSM**) is an elite, high-performance, transactional Log-Structured Merge-tree (LSM-Tree) storage engine engineered from first principles for resource-constrained **ESP32** architectures using the Arduino framework and native FreeRTOS primitives.
+NeuDB is an high-performance, transactional Log-Structured Merge-tree (LSM-Tree) storage engine engineered from first principles for resource-constrained **ESP32** architectures using the Arduino framework and native FreeRTOS primitives.
 
-Version 2.0.0 introduces a revolutionary **Twin-Engine Storage Pipeline** that cleanly bifurcates standard point-in-time transactions from massive sequential telemetric log tracking. Operating entirely within a high-address 32-bit virtual coordinate topology (`0xFFFFFFFF`), NeuDB scales up to **16,384 circular history rolling slots per object ID**, enabling microsecond lookups and lightning-fast write ingestion while maintaining zero heap fragmentation and preserving silicon longevity across internal Flash (LittleFS) or external MicroSD hardware.
+Version 2.x.x introduces a revolutionary **Twin-Engine Storage Pipeline** that cleanly bifurcates standard point-in-time transactions from massive sequential telemetric log tracking. Operating entirely within a high-address 32-bit virtual coordinate topology (`0xFFFFFFFF`), NeuDB scales up to **16,384 circular history rolling slots per object ID**, enabling microsecond lookups and lightning-fast write ingestion while maintaining zero heap fragmentation and preserving silicon longevity across internal Flash (LittleFS) or external MicroSD hardware.
 
 ---
 
-### Why NeuDB v2.0.0?
+### Why NeuDB?
 
-| Feature                  | Traditional Frameworks / JSON               | NeuDB v2.0.0 (Twin-Engine LSM)                          |
+| Feature                  | Traditional Frameworks / JSON               | NeuDB (Twin-Engine LSM)                                 |
 | :----------------------- | :------------------------------------------ | :------------------------------------------------------ |
 | **Write Latency & Wear** | High Flash Wear (In-Place Update Blocks)    | Hyper-Drive Speed (Sequential Append Operations)        |
 | **Power-Fail Safety**    | High Risk of Filesystem Sector Corruption   | Bulletproof System (Atomic WAL Replay Validation)       |
@@ -42,29 +42,6 @@ Version 2.0.0 introduces a revolutionary **Twin-Engine Storage Pipeline** that c
 
 - **Ingestion Performance:** `100 sequential log writes` committed with complete physical WAL serialization to non-volatile disk in **12 milliseconds** (~120 microseconds per individual write operation).
 - **Zero-Malloc Operational Stability:** Erases dynamic heap allocations (`malloc`/`new`) during active runtime write transactions. Employs zero-copy move transformations (`std::move`) during data flushing passes to maintain dead-flat line memory utilization curves over long-term application cycles.
-
----
-
-## Installation
-
-### Arduino Library Manager (Recommended)
-
-1. In the Arduino IDE, go to **Sketch > Include Library > Manage Libraries...**
-2. Search for **NeuDB**
-3. Click **Install**
-
-### PlatformIO
-
-```ini
-lib_deps = ulywae/NeuDB
-```
-
-### Manual Installation (Arduino)
-
-1. Download the repository as `.zip`
-2. Open Arduino IDE
-3. Go to **Sketch > Include Library > Add .ZIP Library**
-4. Select the downloaded file
 
 ---
 
@@ -190,7 +167,9 @@ void loop() {
 - `void flush()`: Forces immediate isolation splitting and serialization of the volatile RAM MemTable down to Level 0 regular and log SST physical blocks.
 - `bool format()`: Safely deconstructs active threads, purges the background compaction queue, unlinks physical files, and cleanly resets the state machine from zero.
 - `void auditLevels()`: Generates an accurate topological live report detailing entries count, file volumes, storage footprints, and active tombstones across regular and log levels.
-- `const char* getVersion() const`: Retrieves the absolute framework release version string (`"2.0.0"`) supporting read-only diagnostic metadata checks.
+- `const char* getVersion() const`: Retrieves the absolute framework release version string supporting read-only diagnostic metadata checks.
+- `bool exportKeyValuesToStream(Stream* targetStream)`: Sweeps the active regular database partition, serializing all live distinct Key-Value pairs directly onto an external output channel using a zero-copy, space-optimized 4-byte wire header protocol.
+- `bool exportLogsToStream(Stream* targetStream)`: Executes a chronological cascading sweep across multi-version log snapshot layers, unpacking high-address offsets into pure circular rolling coordinates before streaming packed binary telemetry structures onto the target interface bus.
 
 ### Advanced Type-Safe Utility Accelerators (Regular Pipeline)
 
@@ -203,7 +182,7 @@ void loop() {
 
 ## Performance Tuning & Hardware Configuration
 
-NeuDB v2.0.0 features an **Adaptive Compile-Time Configuration Engine** managed entirely through the external `NeuDB_Config.h` header. The core system architecture automatically shifts its internal topology, dynamic memory budgets, tree depths, and pre-filtering matrices based on your active storage pipeline selector.
+NeuDB features an **Adaptive Compile-Time Configuration Engine** managed entirely through the external `NeuDB_Config.h` header. The core system architecture automatically shifts its internal topology, dynamic memory budgets, tree depths, and pre-filtering matrices based on your active storage pipeline selector.
 
 To modify the database profile, open `NeuDB_Config.h` and toggle the static preprocessor macro definition:
 
@@ -230,9 +209,9 @@ When a profile is locked, the internal engine automatically scales the following
 | **`NEU_BLOOM_FILTER_SIZE`**    |            64 Bytes (512 bits)             |         128 Bytes (1024 bits)          | Tightens the dense bitmask array to suppress lookup false positives.    |
 | **`NEU_BLOOM_HASH_COUNT`**     |                4 Functions                 |              5 Functions               | Optimizes the mathematical collision dampener for target block density. |
 
-### Dynamic Resource-Aware Auto-Tuning Engine (v2.0.0)
+### Dynamic Resource-Aware Auto-Tuning Engine
 
-NeuDB v2.0.0 embeds an asynchronous, lock-free system telemetry monitor directly within the background `tick()` daemon running on **CPU Core 1**. Instead of enforcing rigid static memory boundaries, the engine dynamically recalculates an elastic threshold (`_adaptiveLimit`) based on an active multi-variable pressure score matrix:
+NeuDB embeds an asynchronous, lock-free system telemetry monitor directly within the background `tick()` daemon running on **CPU Core 1**. Instead of enforcing rigid static memory boundaries, the engine dynamically recalculates an elastic threshold (`_adaptiveLimit`) based on an active multi-variable pressure score matrix:
 
 $$\text{Score} = (\text{WritePressure} \times 0.5) + ((1.0 - \text{HeapRatio}) \times 0.3) + (\text{L0FileCount} \times 0.2)$$
 
@@ -253,18 +232,6 @@ If `USE_SDCARD` is uncommented, the unified `STORAGE_INIT()` gate automatically 
 #define SD_SCK    18  ///< Serial Clock Synchronizer Signal Line
 #define SD_SPEED  4000000 ///< SPI Transmission Bus Clock Velocity (4MHz)
 ```
-
----
-
-## Tested Stability & Stress Ingestion Matrix
-
-NeuDB v2.0.0 has been rigorously put through defensive, industrial-grade stress scenarios ("Abrasive Stress Testing Matrix") to guarantee production durability under extreme deployment environments:
-
-1. **Hyper-Drive Speed Penetrability Test:** Executed **100 / 100 sequential updates** across randomized 14-bit log keys packed with complete physical WAL serialization to non-volatile disk in **12 milliseconds (~120 microseconds per individual write operation)**, verifying the smart write stall policy and the zero-collision arithmetic addition engine under maximum workload throughput.
-
-2. **Over-Capacity Memory Saturation Strain:** Bombardment of **4,000 dense updates** via hot-key rolling loops to pressure background task context-switching, validating the **Heuristic Eviction Matrix** and the dynamic 128-bit stack mask tracker by effectively consolidating **4,000 updates into ~1,286 active deduplicated records** to keep the layout perfectly bounded below target capacity limits.
-
-3. **Power-Fail Sabotage Interruption:** Hard physical power cutouts triggered during continuous multi-threaded write loops with aggressive forced flushes. Validated **100% cold crash recovery, zero-format deployment continuity, and data consistency** via automated WAL parsing and hardware-assisted CRC32 verification post-boot sequence.
 
 ---
 

@@ -38,6 +38,8 @@ getLogTimestamp	KEYWORD2
 closeLog	KEYWORD2
 getVersion	KEYWORD2
 auditLevels	KEYWORD2
+exportKeyValuesToStream KEYWORD2
+exportLogsToStream  KEYWORD2
 
 #######################################
 # Constants and Literals (LITERAL1)

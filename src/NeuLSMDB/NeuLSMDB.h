@@ -1,7 +1,7 @@
 /**
  * @file NeuLSMDB.h
  * @brief High-Performance, Hybrid LSM-Tree & Circular Log Embedded Storage Engine
- * @version 2.0.0
+ * @version 2.1.0
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -209,7 +209,7 @@ private:
     uint16_t _endIdx;
     bool _valid;
 
-    // Internal streaming buffers & state counters untuk FreeRTOS isolation
+    // Internal streaming buffers & state counters for FreeRTOS isolation
     void *_readersVector;
     void *_priorityQueue;
     size_t _currentIdx;
@@ -276,6 +276,26 @@ public:
 
     void setOverrideWhenFull(bool enable);
     bool getOverrideWhenFull() const;
+
+    // ==========================================
+    // EXPORT
+    // ==========================================
+
+    typedef void (*NeuDatasetCallback)(uint32_t rawKey, const uint8_t *data, size_t size, void *arg);
+
+    /**
+     * @brief High-speed cascading sweep scan across Regular MemTable and SSTables to extract Key-Value pairs.
+     * @param callback The function pointer handling the ingested raw KV byte frames.
+     * @param arg Optional user argument pointer passed cleanly through the execution pipeline.
+     */
+    void exportKVDataset(NeuDatasetCallback callback, void *arg);
+
+    /**
+     * @brief High-speed cascading sweep scan across MemTable and SSTables to extract log records.
+     * @param callback The function pointer handling the ingested raw byte frames.
+     * @param arg Optional user argument pointer passed cleanly through the execution pipeline.
+     */
+    void exportLogDataset(NeuDatasetCallback callback, void *arg);
 
 private:
     // ==========================================
@@ -423,7 +443,7 @@ private:
         String filename;
         std::vector<SSTIndex> index;
         uint32_t fileId;
-        uint8_t bloom[128]; // Sesuaikan dengan BLOOM_FILTER_SIZE
+        uint8_t bloom[BLOOM_FILTER_SIZE];
     };
 
     struct SourceReader
@@ -489,6 +509,9 @@ private:
 
     /// Helper to find the latest active index and its timestamp for an ID across RAM and Flash index.
     bool findLatestLogIndex(uint16_t id, uint16_t &outIndex, uint32_t &outTs);
+
+    /// The Reusable Core Execution Engine for unified database scanning.
+    void sweepDatasetEngine(bool isLogPipeline, NeuDatasetCallback callback, void *arg);
 };
 
 #endif // NEU_LSMDB_H

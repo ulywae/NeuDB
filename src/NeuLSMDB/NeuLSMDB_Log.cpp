@@ -12,6 +12,7 @@
 // =================================================================
 #define GET_LEVELS_LOG() static_cast<std::vector<NeuLSMDB::SSTFile> *>(_levelsLog)
 #define GET_MEM() static_cast<std::map<uint32_t, NeuLSMDB::MemEntry> *>(_mem)
+#define GET_LEVELS() static_cast<std::vector<NeuLSMDB::SSTFile> *>(_levels)
 
 // =================================================================
 // INTERNAL HELPER: AUTOMATIC LATEST INDEX & TIMESTAMP FINDER
@@ -205,7 +206,7 @@ bool NeuLSMDB::putLog(uint16_t id, const void *data, size_t size)
 }
 
 // =================================================================
-// READ PIPELINE SCENARIO 1: Point-Lookup Data Retrieval (Latest State)
+// READ PIPELINE: Point-Lookup Data Retrieval (Latest State)
 // =================================================================
 bool NeuLSMDB::getLog(uint16_t id, void *out, size_t &size)
 {
@@ -249,12 +250,35 @@ bool NeuLSMDB::getLog(uint16_t id, void *out, size_t &size)
 }
 
 // =================================================================
-// READ PIPELINE SCENARIO 2: Targeted Index Record Retrieval
+// READ PIPELINE: Targeted Index Record Retrieval
 // =================================================================
 bool NeuLSMDB::getLog(uint16_t id, uint16_t index, void *out, size_t &size)
 {
     if (!_systemReady || id >= NEU_LOG_MAX_ID_LIMIT || index >= NEU_LOG_MAX_INDEX)
         return false;
+
+    // ========================================================================
+    // ADAPTIVE READ-STALL POLICY: LOG PIPELINE DESCRIPTOR SATURATION BRAKE
+    // ========================================================================
+    // If the active log SSTable density within Level 0 breaches hard-coded boundaries
+    // due to write-heavy log bombardments, dynamically throttle the point-lookup
+    // pipeline execution context. This yields CPU cycles to the background maintenance
+    // worker thread, mitigating Virtual File System (VFS) block descriptor saturation
+    // and preventing severe Multi-Core resource lock contentions over the database mutex.
+    size_t logLevel0Density = GET_LEVELS_LOG()[0].size();
+
+    if (logLevel0Density >= 16)
+    {
+        // Critical Saturation Boundary: Force a 4-millisecond reactive backoff window
+        // to allow the background K-Way Merge worker to clear out Level 0 file shards.
+        vTaskDelay(pdMS_TO_TICKS(4));
+    }
+    else if (logLevel0Density >= 8)
+    {
+        // Elevated Pressure Alert: Execute a brief 1ms cooperative multitask yield
+        // to appease the ESP32 Task Watchdog Timer (TWDT) boundaries.
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
 
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
         return false;
@@ -363,15 +387,12 @@ size_t NeuLSMDB::getTotalLog(uint16_t id)
 
     do
     {
-        // Coordinate Translation Layer: Compute absolute 32-bit register address ranges.
-        // This isolates the target object's packed history track within the virtual upper offset boundary.
+        // Coordinate Translation Layer: Map target ID to its exact virtual 32-bit register boundaries
         uint32_t keyStart = NEU_LOG_KEY_OFFSET + ((uint32_t)id << NEU_LOG_INDEX_BITS);
         uint32_t keyEnd = keyStart + NEU_LOG_INDEX_MASK;
 
-        // Deduplication Tracking Matrix: Twin 64-bit storage tracks forming a unified bitmask.
-        // This matches the dynamic layout of NEU_LOG_MAX_INDEX to provide zero-heap-allocation overhead.
-        uint64_t maskLower = 0; // Bitmask mapping circular ring slots from 0 up to (NEU_LOG_MAX_INDEX / 2) - 1
-        uint64_t maskUpper = 0; // Bitmask mapping circular ring slots from (NEU_LOG_MAX_INDEX / 2) up to NEU_LOG_MAX_INDEX - 1
+        // Dynamic MVCC Bitmap: Space-optimized 1-bit allocation per circular tracking slot
+        std::vector<bool> discoveredSlots(NEU_LOG_MAX_INDEX, false);
 
         // Stage 1: Volatile Cache Scan (RAM MemTable Log Iteration)
         // Execute a fast lower-bound tree traversal to count fresh un-flushed states first.
@@ -379,29 +400,13 @@ size_t NeuLSMDB::getTotalLog(uint16_t id)
         auto itMem = mapMem.lower_bound(keyStart);
         while (itMem != mapMem.end() && itMem->first <= keyEnd)
         {
-            // Decode the 14-bit index coordinates to extract the specific circular slot position.
-            uint8_t idx = (itMem->first - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK;
+            // Decode the index coordinates to extract the specific circular slot position.
+            uint32_t idx = (itMem->first - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK;
 
-            bool alreadyDiscovered = false;
-            if (idx < 64)
+            if (idx < NEU_LOG_MAX_INDEX && !discoveredSlots[idx])
             {
-                if (maskLower & (1ULL << idx))
-                    alreadyDiscovered = true;
-                else
-                    maskLower |= (1ULL << idx);
-            }
-            else
-            {
-                if (maskUpper & (1ULL << (idx - 64)))
-                    alreadyDiscovered = true;
-                else
-                    maskUpper |= (1ULL << (idx - 64));
-            }
+                discoveredSlots[idx] = true; // Lock slot allocation context at its freshest state
 
-            // Deduplication Guard: Only accumulate live, non-tombstone records that have not been masked
-            // by a newer memory mutation state at this slot index position.
-            if (!alreadyDiscovered)
-            {
                 if (!itMem->second.tombstone)
                     activeCount++;
             }
@@ -422,29 +427,14 @@ size_t NeuLSMDB::getTotalLog(uint16_t id)
 
                 while (idxIt != sst.index.end() && idxIt->key <= keyEnd)
                 {
-                    uint8_t idx = (idxIt->key - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK;
-
-                    bool alreadyDiscovered = false;
-                    if (idx < 64)
-                    {
-                        if (maskLower & (1ULL << idx))
-                            alreadyDiscovered = true;
-                        else
-                            maskLower |= (1ULL << idx);
-                    }
-                    else
-                    {
-                        if (maskUpper & (1ULL << (idx - 64)))
-                            alreadyDiscovered = true;
-                        else
-                            maskUpper |= (1ULL << (idx - 64));
-                    }
+                    uint32_t idx = (idxIt->key - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK;
 
                     // Historical Multi-Version Concurrency Control (MVCC) Filter Fence:
-                    // If this slot was already encountered in newer SST files or the active MemTable,
-                    // it represents an obsolete historical state and is bypassed to ensure true metric calculation.
-                    if (!alreadyDiscovered)
+                    // If a slot is already found at the top (newer) level, skip this obsolete state.
+                    if (idx < NEU_LOG_MAX_INDEX && !discoveredSlots[idx])
                     {
+                        discoveredSlots[idx] = true; // Commit structural occupancy map
+
                         if (!idxIt->tombstone)
                             activeCount++;
                     }
@@ -992,7 +982,110 @@ bool NeuLSMDB::writeSSTLog(uint8_t level, const std::map<uint32_t, MemEntry> &en
 }
 
 // =================================================================
-// STREAMING LAYER: SCENARIO 3 RANGE ITERATOR CONSTRUCTOR
+// SYSTEM EXPORT UTILITY: Regular Key-Value Streaming Scan Cascade
+// =================================================================
+void NeuLSMDB::sweepDatasetEngine(bool isLogPipeline, NeuDatasetCallback callback, void *arg)
+{
+    if (!_systemReady || !callback)
+        return;
+
+    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(2000)) != pdTRUE)
+        return;
+
+    do
+    {
+        // Dynamic Allocation Layer: Set limits based on target partition profiles
+        uint32_t maxLimit = isLogPipeline ? NEU_LOG_MAX_INDEX : NEU_KEY_SPACE_LIMIT;
+        std::vector<bool> discoveredBits(maxLimit, false);
+
+        uint16_t maxIdLoops = isLogPipeline ? NEU_LOG_MAX_ID_LIMIT : 1;
+
+        for (uint16_t id = 0; id < maxIdLoops; id++)
+        {
+            // Compute range boundaries dynamically
+            uint32_t keyStart = isLogPipeline ? (NEU_LOG_KEY_OFFSET + ((uint32_t)id << NEU_LOG_INDEX_BITS)) : 0;
+            uint32_t keyEnd = isLogPipeline ? (keyStart + NEU_LOG_INDEX_MASK) : (NEU_KEY_SPACE_LIMIT - 1);
+
+            std::fill(discoveredBits.begin(), discoveredBits.end(), false);
+
+            // -------------------------------------------------------------
+            // STAGE 1: Volatile Cache Pipeline (MemTable Sweep)
+            // -------------------------------------------------------------
+            auto &mapMem = *GET_MEM();
+            auto itMem = mapMem.lower_bound(keyStart);
+            while (itMem != mapMem.end() && itMem->first <= keyEnd)
+            {
+                uint32_t mapKey = itMem->first;
+                uint32_t bitIdx = isLogPipeline ? ((mapKey - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK) : mapKey;
+
+                if (bitIdx < maxLimit && !discoveredBits[bitIdx])
+                {
+                    discoveredBits[bitIdx] = true; // Lock memory context version
+
+                    if (!itMem->second.tombstone && itMem->second.size > 0 && itMem->second.value)
+                    {
+                        callback(mapKey, itMem->second.value.get(), itMem->second.size, arg);
+                    }
+                }
+                ++itMem;
+            }
+
+            // -------------------------------------------------------------
+            // STAGE 2: Non-Volatile Storage Pipeline (SSTable Layers Scan)
+            // -------------------------------------------------------------
+            for (int lvl = 0; lvl < MAX_LEVEL; lvl++)
+            {
+                // JAWABAN KUNCI: Pilih kontainer file aslinya secara dinamis!
+                auto &levelVector = isLogPipeline ? GET_LEVELS_LOG()[lvl] : GET_LEVELS()[lvl];
+
+                for (auto itSST = levelVector.rbegin(); itSST != levelVector.rend(); ++itSST)
+                {
+                    auto &sst = *itSST;
+                    auto idxIt = std::lower_bound(sst.index.begin(), sst.index.end(),
+                                                  SSTIndex{keyStart, 0, 0, 0, false});
+
+                    while (idxIt != sst.index.end() && idxIt->key <= keyEnd)
+                    {
+                        uint32_t sstKey = idxIt->key;
+                        uint32_t bitIdx = isLogPipeline ? ((sstKey - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK) : sstKey;
+
+                        if (bitIdx < maxLimit && !discoveredBits[bitIdx])
+                        {
+                            discoveredBits[bitIdx] = true; // Shadow obsolete historical iterations
+
+                            if (!idxIt->tombstone && idxIt->size > 0)
+                            {
+                                std::vector<uint8_t> readBuf(idxIt->size);
+                                size_t tmpSize = idxIt->size;
+
+                                if (readSST(sst, *idxIt, readBuf.data(), tmpSize))
+                                {
+                                    callback(sstKey, readBuf.data(), tmpSize, arg);
+                                }
+                            }
+                        }
+                        ++idxIt;
+                    }
+                }
+            }
+        }
+    } while (0);
+
+    xSemaphoreGive(_mutex);
+}
+
+void NeuLSMDB::exportLogDataset(NeuDatasetCallback callback, void *arg)
+{
+    sweepDatasetEngine(true, callback, arg);
+}
+
+void NeuLSMDB::exportKVDataset(NeuDatasetCallback callback, void *arg)
+{
+    sweepDatasetEngine(false, callback, arg);
+}
+
+// =================================================================
+// STREAMING LAYER: RANGE ITERATOR CONSTRUCTOR
 // =================================================================
 NeuLSMDB_LogIterator::NeuLSMDB_LogIterator(NeuLSMDB *db, uint16_t id, uint16_t startIdx, uint16_t endIdx)
     : _db(db), _id(id), _startIdx(startIdx), _endIdx(endIdx), _valid(false), _currentIdx(0), _currentTs(0), _currentTombstone(false)
@@ -1085,8 +1178,8 @@ bool NeuLSMDB_LogIterator::next()
                       uint32_t slotB = (b.key - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK;
 
                       if (slotA != slotB)
-                          return slotA < slotB; // Urutke manut nomor slot asline seko cilik nyang dhuwur
-                      return a.ts > b.ts;       // Yen slot bunderane padha, pilih data sing timestamp-e paling seger
+                          return slotA < slotB; // Sort by original slot number from smallest to largest
+                      return a.ts > b.ts;       // If the round slots are the same, select the data with the most recent timestamp
                   });
 
         // Purge obsolete historical duplicate entries, preserving only the freshest mutation block per slot position.
@@ -1094,7 +1187,7 @@ bool NeuLSMDB_LogIterator::next()
                                     {
                                         uint32_t slotA = (a.key - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK;
                                         uint32_t slotB = (b.key - NEU_LOG_KEY_OFFSET) & NEU_LOG_INDEX_MASK;
-                                        return slotA == slotB; // Yen beneran manggoni kamar slot bunderan sing padha, nembe di-buak siji!
+                                        return slotA == slotB; // If they really occupy the same circular slot, they just opened one!
                                     });
         collected.erase(uniqueIt, collected.end());
 

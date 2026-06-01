@@ -1,7 +1,7 @@
 /**
  * @file NeuDB_Config.h
  * @brief Adaptive Compile-Time Configuration Profiles for the NeuLSMDB Engine.
- * @version 2.0.0
+ * @version 2.1.0
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -83,7 +83,7 @@
  * Amplified specifications balancing dynamic block clusters and wear-leveling endurance constraints.
  * @{
  */
-// SPI Bus Physical Hardware Pin Configurations (Fixed "Kolor Ijo" Pin Allocation)
+// SPI Bus Physical Hardware Pin Configurations (Fixed Pin Allocation)
 #define SD_CS 5                       ///< Hardware SPI Chip Select (CS) Active-Low Line Controller GPIO
 #define SD_MOSI 23                    ///< Hardware SPI Master Out Slave In Peripheral Data Line GPIO
 #define SD_MISO 19                    ///< Hardware SPI Master In Slave Out Peripheral Data Line GPIO
