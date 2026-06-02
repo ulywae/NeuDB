@@ -54,9 +54,6 @@ NeuDB exposes a type-safe template acceleration facade, allowing you to ingest v
 ```cpp
 #include <NeuDB.h>
 
-// Initialize the unified high-level abstraction gate
-NeuDB db;
-
 // Struct packed ensures dense storage alignment without compiler padding bytes
 struct __attribute__((packed)) EmbeddedTelemetry {
     uint32_t transactionID;
