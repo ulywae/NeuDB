@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.h
  * @brief High‑Level Facade Interface Wrapper for the NeuLSMDB Core Storage Engine.
- * @version 2.1.0
+ * @version 2.1.1
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -19,13 +19,22 @@
 #include <cstddef>
 #include <Arduino.h>
 
+/**
+ * @note SYSTEM REBOOT RELEASE NOTES (v2.0.0):
+ * - Deployed high-address anchor 32-bit register architecture to prevent key collision track.
+ * - Engineered twin-engine storage pipeline (isolated regular and log snapshot layers).
+ * - Expanded circular rolling history tracks up to 16,384 non-volatile dynamic slots per ID.
+ * - Embedded hyper-drive write ingestion pipeline (100 sequential commits in 12ms).
+ * - Standardized corporate-grade Doxygen technical English documentation architecture.
+ */
+
 // ==================================================================================
 // NEUDB COMPILATION FRAMEWORK INTERFACE LAYER
 // ==================================================================================
 #define NEU_DB_VERSION_MAJOR 2
 #define NEU_DB_VERSION_MINOR 1
-#define NEU_DB_VERSION_PATCH 0
-#define NEU_DB_VERSION_STR "2.1.0"
+#define NEU_DB_VERSION_PATCH 1
+#define NEU_DB_VERSION_STR "2.1.1"
 
 // =================================================================
 // FORWARD DECLARATION LAYER: ZERO‑HEADER POLLUTION GUARANTEE
@@ -189,6 +198,24 @@ public:
      * @return true on successful string commitment; false on failure bounds.
      */
     bool putString(uint16_t key, const String &str);
+
+    // =================================================================
+    // CONFIGURATION BUFFER MUTATORS
+    // =================================================================
+    /**
+     * @brief Sets the maximum internal buffer size for dynamic string retrieval.
+     * @param maxLen The new maximum byte length limit for getString operations.
+     */
+    void setMaxStringLength(size_t maxLen)
+    {
+        if (maxLen > 0 && maxLen <= 1024)
+            this->_maxStrLen = maxLen;
+    }
+
+    /**
+     * @brief Gets the current maximum internal buffer size for string retrieval.
+     */
+    size_t getMaxStringLength() const { return this->_maxStrLen; }
 
     /**
      * @brief Materializes dynamic heap-allocated text entries into standard Arduino String objects.
@@ -390,12 +417,31 @@ public:
      */
     bool exportLogsToStream(Stream *targetStream);
 
+    // =================================================================
+    // SYSTEM STORAGE METRICS INTERFACE (ZERO-IO RAM CACHED)
+    // =================================================================
+    /**
+     * @brief Retrieves the total flash storage partition scale in bytes.
+     */
+    size_t getTotalBytes() const;
+
+    /**
+     * @brief Retrieves the currently occupied storage footprint in bytes.
+     */
+    size_t getUsedBytes() const;
+
+    /**
+     * @brief Computes the remaining free non-volatile storage space in bytes.
+     */
+    inline size_t getFreeBytes() const { return this->getTotalBytes() - this->getUsedBytes(); }
+
 private:
     // =================================================================
     // PRIVATE INTERNAL ARCHITECTURAL GUARD
     // =================================================================
     void *_engine;                      ///< Opaque Pimpl pointer concealing the active NeuLSMDB engine instance profile.
     void *_activeLogIterator = nullptr; ///< Private heap-allocated context tracking state variations for the operational range iterator.
+    size_t _maxStrLen = 128;            ///< Internal template accelerator parameter to set maximum string length bounds for safe stack allocation during getString operations.
 };
 
 /**

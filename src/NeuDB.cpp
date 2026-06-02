@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.cpp
  * @brief Implementation Layer for the Top‑Level NeuDB Facade Wrapper.
- * @version 2.1.0
+ * @version 2.1.1
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -171,8 +171,8 @@ bool NeuDB::putString(uint16_t key, const String &str)
  */
 String NeuDB::getString(uint16_t key)
 {
-    char buffer[128]; // Adjust this value to set maximum safe string length
-    size_t size = sizeof(buffer);
+    size_t size = this->_maxStrLen;
+    char buffer[size]; // Stack allocation
     memset(buffer, 0, size);
 
     if (this->get(key, buffer, size))
@@ -384,6 +384,20 @@ bool NeuDB::exportLogsToStream(Stream *targetStream)
     static_cast<NeuLSMDB *>(_engine)->exportLogDataset(logBridge, targetStream);
 
     return true;
+}
+
+// =================================================================
+// SYSTEM STORAGE METRICS INTERFACE (PIMPL FORWARDING)
+// =================================================================
+
+size_t NeuDB::getTotalBytes() const
+{
+    return static_cast<NeuLSMDB *>(_engine)->getTotalBytesFlash();
+}
+
+size_t NeuDB::getUsedBytes() const
+{
+    return static_cast<NeuLSMDB *>(_engine)->getUsedBytesFlash();
 }
 
 /**

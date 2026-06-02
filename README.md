@@ -8,7 +8,7 @@
 
 NeuDB is an high-performance, transactional Log-Structured Merge-tree (LSM-Tree) storage engine engineered from first principles for resource-constrained **ESP32** architectures using the Arduino framework and native FreeRTOS primitives.
 
-Version 2.x.x introduces a revolutionary **Twin-Engine Storage Pipeline** that cleanly bifurcates standard point-in-time transactions from massive sequential telemetric log tracking. Operating entirely within a high-address 32-bit virtual coordinate topology (`0xFFFFFFFF`), NeuDB scales up to **16,384 circular history rolling slots per object ID**, enabling microsecond lookups and lightning-fast write ingestion while maintaining zero heap fragmentation and preserving silicon longevity across internal Flash (LittleFS) or external MicroSD hardware.
+Built around a revolutionary **Twin-Engine Storage Pipeline**, NeuDB cleanly bifurcates standard point-in-time transactions from massive sequential telemetric log tracking. Operating entirely within a high-address 32-bit virtual coordinate topology (`0xFFFFFFFF`), the architecture scales up to **16,384 circular history rolling slots per object ID**, enabling microsecond lookups and lightning-fast write ingestion while maintaining zero heap fragmentation and preserving silicon longevity across internal Flash (LittleFS) or external MicroSD hardware.
 
 ---
 
@@ -177,6 +177,14 @@ void loop() {
 - `template <typename T> bool getVar(uint16_t key, T &out)`: Recovers arbitrary structures securely from the storage architecture. Compiles exact target size boundaries matching type `T` to enforce memory safety bounds during physical extraction passes.
 - `bool putString(uint16_t key, const String &str)`: Serializes dynamic heap-allocated Arduino String components down to persistent blocks. Safely traverses heap pointers to capture true character array boundaries and length metrics with embedded null terminators.
 - `String getString(uint16_t key)`: Materializes dynamic heap-allocated text entries back into standard Arduino String objects. Returns a valid verified text record string, or an empty object block on database miss.
+- `void setMaxStringLength(size_t maxLen)`: Configures the maximum internal stack-allocated buffer size for dynamic string retrieval. Features a built-in safety ceiling (up to 1024 bytes) to explicitly safeguard the microcontroller from runtime stack overflows caused by malformed configuration sizes.
+- `size_t getMaxStringLength() const`: Retrieves the currently configured maximum internal buffer size designated for string extraction routines.
+
+### System Storage Monitoring Metrics (Zero-IO RAM Cached)
+
+- `size_t getTotalBytes() const`: Retrieves the total flash storage partition scale in bytes. Directly reads from the internal RAM cache to ensure lightning-fast retrieval with zero hardware bus contention.
+- `size_t getUsedBytes() const`: Retrieves the currently occupied storage footprint in bytes. Returns the cached non-volatile byte consumption tracked inside the database layer without triggering expensive hardware VFS/SPI operations.
+- `size_t getFreeBytes() const`: Computes the remaining free non-volatile storage space in bytes. Instantly calculates the mathematical delta between the total capacity register and used space bounds.
 
 ---
 

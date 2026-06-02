@@ -704,12 +704,6 @@ void NeuLSMDB::flush()
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) != pdTRUE)
         return;
 
-    // Resource Monitoring Layer: Enforce a strict 90% non-volatile hardware storage safety ceiling.
-    // Proactively calculate storage pressures to trigger protective eviction mechanisms before sector exhaustion occurs.
-    size_t totalBytesFlash = STORAGE_TOTAL();
-    size_t usedBytesFlash = STORAGE_USED();
-    _flashFullGuard = (usedBytesFlash >= (totalBytesFlash * 9) / 10);
-
     auto &mapMem = *GET_MEM();
 
     if (mapMem.empty())
@@ -717,6 +711,38 @@ void NeuLSMDB::flush()
         xSemaphoreGive(_mutex);
         return;
     }
+
+    // ========================================================================
+    // RESOURCE MONITORING LAYER: HARDWARE CEILING WITH SDCARD FILTER
+    // ========================================================================
+    size_t totalBytesFlash = 0;
+    size_t usedBytesFlash = 0;
+
+#ifdef USE_SDCARD
+    if (_flushCounter % 10 == 0 || _totalBytesFlash == 0)
+    {
+        totalBytesFlash = STORAGE_TOTAL();
+        usedBytesFlash = STORAGE_USED();
+
+        _totalBytesFlash = totalBytesFlash;
+        _usedBytesFlash = usedBytesFlash;
+    }
+    else
+    {
+        totalBytesFlash = _totalBytesFlash;
+        usedBytesFlash = _usedBytesFlash;
+    }
+    _flushCounter++;
+#else
+    totalBytesFlash = STORAGE_TOTAL();
+    usedBytesFlash = STORAGE_USED();
+
+    _totalBytesFlash = totalBytesFlash;
+    _usedBytesFlash = usedBytesFlash;
+#endif
+
+    // Enforce a strict 90% non-volatile hardware storage safety ceiling.
+    _flashFullGuard = (usedBytesFlash >= (totalBytesFlash * 9) / 10);
 
     // ========================================================================
     // DATA SPLITTER PIPELINE: STRUCTURAL ISOLATION LAYER

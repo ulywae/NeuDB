@@ -1,7 +1,7 @@
 /**
  * @file NeuLSMDB.h
  * @brief High-Performance, Hybrid LSM-Tree & Circular Log Embedded Storage Engine
- * @version 2.1.0
+ * @version 2.1.1
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -276,6 +276,8 @@ public:
 
     void setOverrideWhenFull(bool enable);
     bool getOverrideWhenFull() const;
+    size_t getTotalBytesFlash() const { return _totalBytesFlash; }
+    size_t getUsedBytesFlash() const { return _usedBytesFlash; }
 
     // ==========================================
     // EXPORT
@@ -400,6 +402,13 @@ private:
     volatile bool _systemReady;            ///< True when engine is fully initialized and ready
     volatile bool _stopTaskRequested;      ///< Signal to background task to exit gracefully
     volatile bool _flashFullGuard = false; ///< Flag to prevent repeated eviction attempts when flash is near full
+
+    size_t _totalBytesFlash = 0;
+    size_t _usedBytesFlash = 0;
+
+#ifdef USE_SDCARD
+    uint32_t _flushCounter = 0;
+#endif
 
     std::priority_queue<HeapEntry> _compactHeap; ///< Priority queue used during merging
     bool _compactInitialized = false;            ///< Flag: compaction structures allocated

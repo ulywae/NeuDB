@@ -23,6 +23,8 @@ putVar	KEYWORD2
 getVar	KEYWORD2
 putString	KEYWORD2
 getString	KEYWORD2
+setMaxStringLength	KEYWORD2
+getMaxStringLength	KEYWORD2
 putLog	KEYWORD2
 getLog	KEYWORD2
 getTotalLog	KEYWORD2
@@ -40,6 +42,9 @@ getVersion	KEYWORD2
 auditLevels	KEYWORD2
 exportKeyValuesToStream KEYWORD2
 exportLogsToStream  KEYWORD2
+getTotalBytes	KEYWORD2
+getUsedBytes	KEYWORD2
+getFreeBytes	KEYWORD2
 
 #######################################
 # Constants and Literals (LITERAL1)

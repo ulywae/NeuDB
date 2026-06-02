@@ -1,7 +1,7 @@
 /**
  * @file NeuDB_Config.h
  * @brief Adaptive Compile-Time Configuration Profiles for the NeuLSMDB Engine.
- * @version 2.1.0
+ * @version 2.1.1
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -115,7 +115,7 @@
  * @note Massive historical retention snapshot ceiling targeted for high-capacity external storage.
  * Enforces strict incremental counter pruning during background storage cluster merges.
  */
-#define NEU_MAX_LOG_HISTORY 10240
+#define NEU_MAX_LOG_HISTORY 16384
 
 /** @} */
 #endif
