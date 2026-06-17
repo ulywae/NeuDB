@@ -19,6 +19,17 @@
 #include <cstddef>
 #include <Arduino.h>
 
+#if !defined(ESP_PLATFORM)
+/**
+ * @brief Cross-Platform Compiler Protection.
+ * @details Strictly limits compilation to ESP32 silicon architectures.
+ *          Bypasses heavy cross-platform abstraction layers to guarantee
+ *          native execution speed and minimal flash footprint.
+ */
+#error \
+    "Platform not supported! NeuDB currently only supports ESP32 platform architectures."
+#endif
+
 /**
  * @note SYSTEM REBOOT RELEASE NOTES (v2.0.0):
  * - Deployed high-address anchor 32-bit register architecture to prevent key collision track.
