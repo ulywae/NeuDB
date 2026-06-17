@@ -1,7 +1,7 @@
 /**
  * @file NeuDB_Config.h
  * @brief Adaptive Compile-Time Configuration Profiles for the NeuLSMDB Engine.
- * @version 2.1.1
+ * @version 2.1.2
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
