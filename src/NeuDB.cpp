@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.cpp
  * @brief Implementation Layer for the Top‑Level NeuDB Facade Wrapper.
- * @version 2.1.1
+ * @version 2.1.2
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -37,6 +37,9 @@ NeuDB::~NeuDB()
 {
     // Clean up engine memory when the object is destroyed
     delete static_cast<NeuLSMDB *>(_engine);
+
+    if (_activeLogIterator)
+        delete static_cast<NeuLSMDB_LogIterator *>(_activeLogIterator);
 }
 
 /**
