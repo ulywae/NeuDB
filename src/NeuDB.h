@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.h
  * @brief High‑Level Facade Interface Wrapper for the NeuLSMDB Core Storage Engine.
- * @version 2.1.1
+ * @version 2.1.2
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -33,8 +33,8 @@
 // ==================================================================================
 #define NEU_DB_VERSION_MAJOR 2
 #define NEU_DB_VERSION_MINOR 1
-#define NEU_DB_VERSION_PATCH 1
-#define NEU_DB_VERSION_STR "2.1.1"
+#define NEU_DB_VERSION_PATCH 2
+#define NEU_DB_VERSION_STR "2.1.2"
 
 // =================================================================
 // FORWARD DECLARATION LAYER: ZERO‑HEADER POLLUTION GUARANTEE
@@ -328,7 +328,7 @@ public:
      * @tparam T Inferred type descriptor of the target destination object.
      */
     template <typename T>
-    bool getLogVar(uint16_t id, uint16_t index, T &out) // <--- SINKRON: Pasangan getter public di wrapper wajib uint16_t sisan!
+    bool getLogVar(uint16_t id, uint16_t index, T &out) 
     {
         size_t size = sizeof(T);
         return this->getLog(id, index, &out, size);
