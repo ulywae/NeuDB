@@ -1,7 +1,7 @@
 /**
  * @file NeuLSMDB.h
  * @brief High-Performance, Hybrid LSM-Tree & Circular Log Embedded Storage Engine
- * @version 2.1.1
+ * @version 2.1.2
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
