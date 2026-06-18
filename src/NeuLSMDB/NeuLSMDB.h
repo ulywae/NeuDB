@@ -1,7 +1,7 @@
 /**
  * @file NeuLSMDB.h
  * @brief High-Performance, Hybrid LSM-Tree & Circular Log Embedded Storage Engine
- * @version 2.1.2
+ * @version 2.1.3
  * @date 2026
  * @author ulywae / NeuDB Core Team
  *
@@ -356,7 +356,7 @@ private:
     uint64_t _cacheUsed;   ///< Current bytes used in block cache
 
     void *_mem;        ///< Opaque pointer to active memtable structure
-    void *_levels;     ///< Opaque pointer to multi‑level metadata
+    std::vector<SSTFile> _levels[MAX_LEVEL]; ///< Static array of multi‑level metadata
     void *_cacheList;  ///< Opaque pointer to LRU cache list
     void *_cacheMap;   ///< Opaque pointer to cache lookup map
     CompactJob *_job;  ///< Current active compaction job data
@@ -418,7 +418,7 @@ private:
     // LOG PIPELINE ISOLATION METADATA & ENGINE STATES
     // =================================================================
 
-    void *_levelsLog;                       ///< Opaque pointer to multi‑level metadata for Log SSTables
+    std::vector<SSTFile> _levelsLog[MAX_LEVEL]; ///< Static array of multi‑level metadata for Log SSTables
     CompactJob *_jobLog;                    ///< Current active compaction job data for Log Pipeline
     volatile CompactState _compactLogState; ///< Current compaction phase of the Log Pipeline
 
@@ -449,7 +449,7 @@ private:
 
     struct SSTFile
     {
-        String filename;
+        char filename[64];
         std::vector<SSTIndex> index;
         uint32_t fileId;
         uint8_t bloom[BLOOM_FILTER_SIZE];
