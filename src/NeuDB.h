@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.h
  * @brief High‑Level Facade Interface Wrapper for the NeuLSMDB Core Storage Engine.
- * @version 2.1.2
+ * @version 2.1.3
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
@@ -19,17 +19,6 @@
 #include <cstddef>
 #include <Arduino.h>
 
-#if !defined(ESP_PLATFORM)
-/**
- * @brief Cross-Platform Compiler Protection.
- * @details Strictly limits compilation to ESP32 silicon architectures.
- *          Bypasses heavy cross-platform abstraction layers to guarantee
- *          native execution speed and minimal flash footprint.
- */
-#error \
-    "Platform not supported! NeuDB currently only supports ESP32 platform architectures."
-#endif
-
 /**
  * @note SYSTEM REBOOT RELEASE NOTES (v2.0.0):
  * - Deployed high-address anchor 32-bit register architecture to prevent key collision track.
@@ -44,8 +33,8 @@
 // ==================================================================================
 #define NEU_DB_VERSION_MAJOR 2
 #define NEU_DB_VERSION_MINOR 1
-#define NEU_DB_VERSION_PATCH 2
-#define NEU_DB_VERSION_STR "2.1.2"
+#define NEU_DB_VERSION_PATCH 3
+#define NEU_DB_VERSION_STR "2.1.3"
 
 // =================================================================
 // FORWARD DECLARATION LAYER: ZERO‑HEADER POLLUTION GUARANTEE
@@ -339,7 +328,7 @@ public:
      * @tparam T Inferred type descriptor of the target destination object.
      */
     template <typename T>
-    bool getLogVar(uint16_t id, uint16_t index, T &out) 
+    bool getLogVar(uint16_t id, uint16_t index, T &out) // <--- SINKRON: Pasangan getter public di wrapper wajib uint16_t sisan!
     {
         size_t size = sizeof(T);
         return this->getLog(id, index, &out, size);
