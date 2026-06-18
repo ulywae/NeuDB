@@ -1,6 +1,6 @@
 {
   "name": "NeuDB",
-  "version": "2.1.1",
+  "version": "2.1.3",
   "description": "Ultra-lean, transactional Twin-Engine LSM-Tree storage engine with power-fail resilient lifecycle protection for ESP32.",
   "keywords": [
     "database", 
