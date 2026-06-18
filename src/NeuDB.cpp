@@ -1,7 +1,7 @@
 /**
  * @file NeuDB.cpp
  * @brief Implementation Layer for the Top‑Level NeuDB Facade Wrapper.
- * @version 2.1.2
+ * @version 2.1.3
  * @date 2026
  * @author Ulywae / Neu Embedded Ecosystem Framework
  *
