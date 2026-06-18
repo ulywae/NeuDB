@@ -785,6 +785,66 @@ void NeuLSMDB::tickCompactLog()
         // Execute an atomic VFS rename transaction to safely register the consolidated SSTable on the file system.
         if (STORAGE_RENAME(_jobLog->dstTemp, _jobLog->dstFinal))
         {
+            File f = STORAGE_OPEN(_jobLog->dstFinal, "r");
+            if (f)
+            {
+                std::vector<SSTIndex> idx;
+                SSTFile sst;
+                memset(sst.bloom, 0, sizeof(sst.bloom));
+
+                // SYNC FILE ID FROM dstFinal
+                int lastUnderscore = _jobLog->dstFinal.lastIndexOf('_');
+                int lastDot = _jobLog->dstFinal.lastIndexOf('.');
+                if (lastUnderscore != -1 && lastDot != -1 && lastDot > lastUnderscore)
+                {
+                    sst.fileId = _jobLog->dstFinal.substring(lastUnderscore + 1, lastDot).toInt();
+                }
+                else
+                {
+                    sst.fileId = getFileSeq();
+                }
+                strncpy(sst.filename, _jobLog->dstFinal.c_str(), sizeof(sst.filename) - 1);
+                sst.filename[sizeof(sst.filename) - 1] = '\0';
+
+                while (f.available())
+                {
+                    uint32_t currentEntryOffset = f.position();
+
+                    SSTHeader readHeader;
+                    if (f.read((uint8_t *)&readHeader, sizeof(SSTHeader)) != sizeof(SSTHeader))
+                        break;
+
+                    SSTIndex entry;
+                    entry.key = readHeader.key;
+                    entry.offset = currentEntryOffset;
+                    entry.size = readHeader.size;
+                    entry.ts = readHeader.ts;
+                    entry.tombstone = (readHeader.tombstone == 1);
+
+                    bloomAdd(sst.bloom, entry.key);
+
+                    if (entry.size > 0)
+                    {
+                        f.seek(entry.size, SeekCur);
+                    }
+
+                    idx.push_back(entry);
+
+                    if (!entry.tombstone)
+                        __atomic_add_fetch(&_totalEntryCount, 1, __ATOMIC_SEQ_CST);
+                }
+                f.close();
+
+                std::sort(idx.begin(), idx.end());
+                sst.index = std::move(idx);
+
+                if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE)
+                {
+                    GET_LEVELS_LOG()[1].push_back(std::move(sst));
+                    xSemaphoreGive(_mutex);
+                }
+            }
+
             // Flush old file nodes securely from disk and clean up redundant temporary states
             deleteSSTLogFiles(_jobLog->srcFiles);
         }
@@ -830,7 +890,8 @@ void NeuLSMDB::loadAllSSTLog()
                 String fullPath = "/lsm/" + nm;
 
                 SSTFile sst;
-                sst.filename = fullPath;
+                strncpy(sst.filename, fullPath.c_str(), sizeof(sst.filename) - 1);
+                sst.filename[sizeof(sst.filename) - 1] = '\0';
 
                 int lastUnderscore = nm.lastIndexOf('_');
                 int lastDot = nm.lastIndexOf('.');
@@ -923,7 +984,8 @@ bool NeuLSMDB::writeSSTLog(uint8_t level, const std::map<uint32_t, MemEntry> &en
 
     std::vector<SSTIndex> idx;
     SSTFile sstOut;
-    sstOut.filename = fn;
+    strncpy(sstOut.filename, fn.c_str(), sizeof(sstOut.filename) - 1);
+    sstOut.filename[sizeof(sstOut.filename) - 1] = '\0';
     sstOut.fileId = fid;
     memset(sstOut.bloom, 0, sizeof(sstOut.bloom));
 
@@ -1129,6 +1191,9 @@ bool NeuLSMDB_LogIterator::next()
     // This prevents runtime memory allocation overhead until the user specifically requests dataset streaming.
     if (collected.empty() && _currentIdx == 0 && _currentTs == 0)
     {
+        if (xSemaphoreTake(_db->_mutex, portMAX_DELAY) != pdTRUE)
+            return false;
+
         uint32_t keyStart = NEU_LOG_KEY_OFFSET + ((uint32_t)_id << NEU_LOG_INDEX_BITS) + _startIdx;
         uint32_t keyEnd = keyStart + (_endIdx - _startIdx); // Derive the precise absolute end marker offset
 
@@ -1191,6 +1256,7 @@ bool NeuLSMDB_LogIterator::next()
                                     });
         collected.erase(uniqueIt, collected.end());
 
+        xSemaphoreGive(_db->_mutex);
         _currentIdx = 0;
     }
 
